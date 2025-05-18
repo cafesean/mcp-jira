@@ -1,0 +1,11 @@
+# Task ID: 8
+# Title: Adapt UsersMixin for Per-Request PAT
+# Status: done
+# Dependencies: 5
+# Priority: medium
+# Description: Adapt methods in `UsersMixin` (`jira/users.py`) to accept a `pat: str` parameter and use `_create_jira_client_with_pat` for API calls, specifically addressing `get_current_user_account_id`.
+# Details:
+Modify methods in `UsersMixin` (`_get_account_id`, `get_user_profile_by_identifier`, etc.) to accept `pat: str`. Obtain an authenticated client using `jira_for_call = self._create_jira_client_with_pat(pat)`. Use `jira_for_call` for API interactions. Ensure `get_current_user_account_id` accepts `pat: str` and uses it to identify the user associated with that specific PAT.
+
+# Test Strategy:
+Test `get_current_user_account_id` and other user methods with different PATs belonging to different users. Verify that the correct user information is returned based on the provided PAT and that `_create_jira_client_with_pat` is called.

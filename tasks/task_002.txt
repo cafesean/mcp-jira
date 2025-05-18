@@ -1,0 +1,11 @@
+# Task ID: 2
+# Title: Refactor JiraClient Initialization
+# Status: done
+# Dependencies: 1
+# Priority: medium
+# Description: Update the `JiraClient.__init__` method to remove the initialization of a default authenticated `atlassian.Jira` instance. The `self.jira` attribute should be initialized to `None` or a similar non-authenticated state.
+# Details:
+Navigate to `jira/client.py`. In the `JiraClient.__init__` method, remove the logic that creates and assigns an `atlassian.Jira` instance using default credentials. Initialize `self.jira` to `None`.
+
+# Test Strategy:
+Instantiate `JiraClient` and verify that `self.jira` is `None` or unauthenticated immediately after initialization.

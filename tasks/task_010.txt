@@ -1,0 +1,11 @@
+# Task ID: 10
+# Title: Update Documentation and Security Review
+# Status: pending
+# Dependencies: 9
+# Priority: high
+# Description: Update documentation (`README.md`, etc.) to reflect the mandatory `jira_pat` tool input parameter and explain client responsibilities. Conduct a security review and logging audit.
+# Details:
+Update user-facing documentation to clearly state that a `jira_pat` is now a mandatory input for all authenticated Jira tools. Explain that the client calling the tool is responsible for obtaining and providing this PAT. Add notes on security implications for clients handling PATs. Review the codebase and logs to confirm that PAT values are never logged and that the `exclude=True` annotation on the `jira_pat` field is effective.
+
+# Test Strategy:
+Review updated documentation for clarity and accuracy regarding the new authentication model. Perform manual testing or code review to confirm no PAT values are logged during tool execution, including error paths. Verify the `exclude=True` annotation prevents PAT from appearing in serialized tool inputs/outputs if applicable.

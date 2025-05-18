@@ -1,0 +1,11 @@
+# Task ID: 3
+# Title: Implement Per-Request Jira Client Creation
+# Status: done
+# Dependencies: 2
+# Priority: medium
+# Description: Implement a new private method `_create_jira_client_with_pat` in `jira/client.py` that instantiates and returns a new `atlassian.Jira` client using a provided PAT and the client's stored configuration (URL, SSL, proxy).
+# Details:
+Add `_create_jira_client_with_pat(self, pat: str) -> Jira` method to `jira/client.py`. Inside this method, create `atlassian.Jira(url=self.config.url, token=pat, cloud=self.config.is_cloud, verify_ssl=self.config.ssl_verify)`. Apply SSL verification settings using `configure_ssl_verification` and proxy settings from `self.config` to the new client's session. Log INFO "Creating Jira client for request using provided PAT." without logging the PAT value.
+
+# Test Strategy:
+Call the new method with a valid PAT and configuration. Verify that a `atlassian.Jira` instance is returned, configured with the correct URL, PAT, cloud status, SSL settings, and proxy. Check logs to ensure PAT value is not present.

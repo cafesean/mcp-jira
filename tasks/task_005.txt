@@ -1,0 +1,11 @@
+# Task ID: 5
+# Title: Update Jira Tool Signatures with PAT Input
+# Status: done
+# Dependencies: 4
+# Priority: high
+# Description: Modify the signatures and logic of all Jira tools defined in `servers/jira.py` that require authentication. Add a mandatory `jira_pat: Annotated[str, Field(description="Jira Personal Access Token for this request.", exclude=True)]` input parameter and pass this PAT to the corresponding `JiraFetcher` method.
+# Details:
+Iterate through all tool definitions in `servers/jira.py` that interact with Jira API. For each, add the `jira_pat` parameter with the specified annotation and description. Update the tool's docstring to reflect the new parameter. Modify the tool's execution logic to pass the received `jira_pat` value when calling the relevant method on the `JiraFetcher` instance.
+
+# Test Strategy:
+For a representative set of tools, verify that the tool signature includes the `jira_pat` parameter with correct annotation and description. Test calling these tools with and without a PAT to ensure the parameter is mandatory and correctly passed down.

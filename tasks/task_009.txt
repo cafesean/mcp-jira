@@ -1,0 +1,11 @@
+# Task ID: 9
+# Title: Write Unit and Integration Tests
+# Status: done
+# Dependencies: 6, 7, 8
+# Priority: high
+# Description: Write unit and integration tests to verify that tools correctly use the `jira_pat` input, error handling for invalid/missing PATs works, and SSL/proxy settings are applied to dynamically created clients.
+# Details:
+Create test cases covering: successful tool execution with a valid PAT; tool failure when PAT is missing or invalid; verification that SSL verification is enabled/disabled based on config; verification that proxy settings are applied to the session of the client created by `_create_jira_client_with_pat`.
+
+# Test Strategy:
+Run the test suite. Ensure all new tests pass, covering the core authentication flow, error conditions, and client configuration application.

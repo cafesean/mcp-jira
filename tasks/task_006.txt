@@ -1,0 +1,11 @@
+# Task ID: 6
+# Title: Adapt General JiraFetcher Mixins for Per-Request PAT
+# Status: done
+# Dependencies: 5
+# Priority: medium
+# Description: Adapt methods in most JiraFetcher mixins (`IssuesMixin`, `SearchMixin`, `ProjectsMixin`, `CommentsMixin`, `LinksMixin`, `SprintsMixin`, `TransitionsMixin`, `WorklogMixin`, `AttachmentsMixin`, `BoardsMixin`) to accept a `pat: str` parameter and use `_create_jira_client_with_pat` for API calls.
+# Details:
+For each method in the specified mixins that makes Jira API calls: Modify the method signature to accept `pat: str`. Obtain an authenticated client using `jira_for_call = self._create_jira_client_with_pat(pat)`. Use `jira_for_call` for all API interactions within the method. Ensure the `pat` is propagated to any internal helper methods that also make API calls.
+
+# Test Strategy:
+For a representative set of methods across these mixins, write integration tests that call the methods with a PAT. Verify that API calls are successful and that `_create_jira_client_with_pat` is invoked with the provided PAT.

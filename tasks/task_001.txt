@@ -1,0 +1,11 @@
+# Task ID: 1
+# Title: Refactor JiraConfig for Per-Request PAT
+# Status: done
+# Dependencies: None
+# Priority: medium
+# Description: Modify the JiraConfig class to remove loading and storage of default Jira PAT, username/API token, and OAuth credentials intended for Jira API authentication. Retain URL, SSL, and proxy configurations.
+# Details:
+Locate `jira/config.py`. Identify and remove code responsible for loading and storing authentication credentials (PAT, username/token, OAuth) from environment variables or other default sources. Ensure URL, SSL verification settings, and proxy configurations remain intact.
+
+# Test Strategy:
+Verify that `JiraConfig` instances no longer store or load authentication secrets. Check that URL, SSL, and proxy settings are still correctly handled.

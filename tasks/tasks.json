@@ -1,0 +1,134 @@
+{
+  "tasks": [
+    {
+      "id": 1,
+      "title": "Refactor JiraConfig for Per-Request PAT",
+      "description": "Modify the JiraConfig class to remove loading and storage of default Jira PAT, username/API token, and OAuth credentials intended for Jira API authentication. Retain URL, SSL, and proxy configurations.",
+      "details": "Locate `jira/config.py`. Identify and remove code responsible for loading and storing authentication credentials (PAT, username/token, OAuth) from environment variables or other default sources. Ensure URL, SSL verification settings, and proxy configurations remain intact.",
+      "testStrategy": "Verify that `JiraConfig` instances no longer store or load authentication secrets. Check that URL, SSL, and proxy settings are still correctly handled.",
+      "priority": "medium",
+      "dependencies": [],
+      "status": "done",
+      "subtasks": []
+    },
+    {
+      "id": 2,
+      "title": "Refactor JiraClient Initialization",
+      "description": "Update the `JiraClient.__init__` method to remove the initialization of a default authenticated `atlassian.Jira` instance. The `self.jira` attribute should be initialized to `None` or a similar non-authenticated state.",
+      "details": "Navigate to `jira/client.py`. In the `JiraClient.__init__` method, remove the logic that creates and assigns an `atlassian.Jira` instance using default credentials. Initialize `self.jira` to `None`.",
+      "testStrategy": "Instantiate `JiraClient` and verify that `self.jira` is `None` or unauthenticated immediately after initialization.",
+      "priority": "medium",
+      "dependencies": [
+        1
+      ],
+      "status": "done",
+      "subtasks": []
+    },
+    {
+      "id": 3,
+      "title": "Implement Per-Request Jira Client Creation",
+      "description": "Implement a new private method `_create_jira_client_with_pat` in `jira/client.py` that instantiates and returns a new `atlassian.Jira` client using a provided PAT and the client's stored configuration (URL, SSL, proxy).",
+      "details": "Add `_create_jira_client_with_pat(self, pat: str) -> Jira` method to `jira/client.py`. Inside this method, create `atlassian.Jira(url=self.config.url, token=pat, cloud=self.config.is_cloud, verify_ssl=self.config.ssl_verify)`. Apply SSL verification settings using `configure_ssl_verification` and proxy settings from `self.config` to the new client's session. Log INFO \"Creating Jira client for request using provided PAT.\" without logging the PAT value.",
+      "testStrategy": "Call the new method with a valid PAT and configuration. Verify that a `atlassian.Jira` instance is returned, configured with the correct URL, PAT, cloud status, SSL settings, and proxy. Check logs to ensure PAT value is not present.",
+      "priority": "medium",
+      "dependencies": [
+        2
+      ],
+      "status": "done",
+      "subtasks": []
+    },
+    {
+      "id": 4,
+      "title": "Adapt get_paged for Per-Request PAT",
+      "description": "Update the `get_paged` method in `jira/client.py` to accept a `pat: str` parameter and use the newly implemented `_create_jira_client_with_pat` method to obtain an authenticated client for making API calls.",
+      "details": "Modify the signature of `get_paged` in `jira/client.py` to include `pat: str`. Replace any usage of a default `self.jira` instance with `jira_for_call = self._create_jira_client_with_pat(pat)`. Use `jira_for_call` for all subsequent API calls within the method.",
+      "testStrategy": "Write a test for `get_paged` that provides a PAT. Verify that it successfully fetches paged results using the provided PAT and that `_create_jira_client_with_pat` is called.",
+      "priority": "medium",
+      "dependencies": [
+        3
+      ],
+      "status": "done",
+      "subtasks": []
+    },
+    {
+      "id": 5,
+      "title": "Update Jira Tool Signatures with PAT Input",
+      "description": "Modify the signatures and logic of all Jira tools defined in `servers/jira.py` that require authentication. Add a mandatory `jira_pat: Annotated[str, Field(description=\"Jira Personal Access Token for this request.\", exclude=True)]` input parameter and pass this PAT to the corresponding `JiraFetcher` method.",
+      "details": "Iterate through all tool definitions in `servers/jira.py` that interact with Jira API. For each, add the `jira_pat` parameter with the specified annotation and description. Update the tool's docstring to reflect the new parameter. Modify the tool's execution logic to pass the received `jira_pat` value when calling the relevant method on the `JiraFetcher` instance.",
+      "testStrategy": "For a representative set of tools, verify that the tool signature includes the `jira_pat` parameter with correct annotation and description. Test calling these tools with and without a PAT to ensure the parameter is mandatory and correctly passed down.",
+      "priority": "high",
+      "dependencies": [
+        4
+      ],
+      "status": "done",
+      "subtasks": []
+    },
+    {
+      "id": 6,
+      "title": "Adapt General JiraFetcher Mixins for Per-Request PAT",
+      "description": "Adapt methods in most JiraFetcher mixins (`IssuesMixin`, `SearchMixin`, `ProjectsMixin`, `CommentsMixin`, `LinksMixin`, `SprintsMixin`, `TransitionsMixin`, `WorklogMixin`, `AttachmentsMixin`, `BoardsMixin`) to accept a `pat: str` parameter and use `_create_jira_client_with_pat` for API calls.",
+      "details": "For each method in the specified mixins that makes Jira API calls: Modify the method signature to accept `pat: str`. Obtain an authenticated client using `jira_for_call = self._create_jira_client_with_pat(pat)`. Use `jira_for_call` for all API interactions within the method. Ensure the `pat` is propagated to any internal helper methods that also make API calls.",
+      "testStrategy": "For a representative set of methods across these mixins, write integration tests that call the methods with a PAT. Verify that API calls are successful and that `_create_jira_client_with_pat` is invoked with the provided PAT.",
+      "priority": "medium",
+      "dependencies": [
+        5
+      ],
+      "status": "done",
+      "subtasks": []
+    },
+    {
+      "id": 7,
+      "title": "Adapt FieldsMixin and Remove Caching",
+      "description": "Adapt methods in `FieldsMixin` (`jira/fields.py`) to accept a `pat: str` parameter, use `_create_jira_client_with_pat` for API calls, and remove global field caching.",
+      "details": "Modify methods in `FieldsMixin` (`get_fields`, `get_field_id`, etc.) to accept `pat: str`. Remove the global caches (`_field_ids_cache`, `_field_name_to_id_map`). Implement logic to fetch field metadata live using `jira_for_call = self._create_jira_client_with_pat(pat)` for every request.",
+      "testStrategy": "Test `get_fields` and `get_field_id` with different PATs. Verify that they fetch data live (e.g., by changing fields in Jira and re-fetching) and that no caching is used. Ensure `_create_jira_client_with_pat` is called.",
+      "priority": "medium",
+      "dependencies": [
+        5
+      ],
+      "status": "done",
+      "subtasks": []
+    },
+    {
+      "id": 8,
+      "title": "Adapt UsersMixin for Per-Request PAT",
+      "description": "Adapt methods in `UsersMixin` (`jira/users.py`) to accept a `pat: str` parameter and use `_create_jira_client_with_pat` for API calls, specifically addressing `get_current_user_account_id`.",
+      "details": "Modify methods in `UsersMixin` (`_get_account_id`, `get_user_profile_by_identifier`, etc.) to accept `pat: str`. Obtain an authenticated client using `jira_for_call = self._create_jira_client_with_pat(pat)`. Use `jira_for_call` for API interactions. Ensure `get_current_user_account_id` accepts `pat: str` and uses it to identify the user associated with that specific PAT.",
+      "testStrategy": "Test `get_current_user_account_id` and other user methods with different PATs belonging to different users. Verify that the correct user information is returned based on the provided PAT and that `_create_jira_client_with_pat` is called.",
+      "priority": "medium",
+      "dependencies": [
+        5
+      ],
+      "status": "done",
+      "subtasks": []
+    },
+    {
+      "id": 9,
+      "title": "Write Unit and Integration Tests",
+      "description": "Write unit and integration tests to verify that tools correctly use the `jira_pat` input, error handling for invalid/missing PATs works, and SSL/proxy settings are applied to dynamically created clients.",
+      "details": "Create test cases covering: successful tool execution with a valid PAT; tool failure when PAT is missing or invalid; verification that SSL verification is enabled/disabled based on config; verification that proxy settings are applied to the session of the client created by `_create_jira_client_with_pat`.",
+      "testStrategy": "Run the test suite. Ensure all new tests pass, covering the core authentication flow, error conditions, and client configuration application.",
+      "priority": "high",
+      "dependencies": [
+        6,
+        7,
+        8
+      ],
+      "status": "done",
+      "subtasks": []
+    },
+    {
+      "id": 10,
+      "title": "Update Documentation and Security Review",
+      "description": "Update documentation (`README.md`, etc.) to reflect the mandatory `jira_pat` tool input parameter and explain client responsibilities. Conduct a security review and logging audit.",
+      "details": "Update user-facing documentation to clearly state that a `jira_pat` is now a mandatory input for all authenticated Jira tools. Explain that the client calling the tool is responsible for obtaining and providing this PAT. Add notes on security implications for clients handling PATs. Review the codebase and logs to confirm that PAT values are never logged and that the `exclude=True` annotation on the `jira_pat` field is effective.",
+      "testStrategy": "Review updated documentation for clarity and accuracy regarding the new authentication model. Perform manual testing or code review to confirm no PAT values are logged during tool execution, including error paths. Verify the `exclude=True` annotation prevents PAT from appearing in serialized tool inputs/outputs if applicable.",
+      "priority": "high",
+      "dependencies": [
+        9
+      ],
+      "status": "pending",
+      "subtasks": []
+    }
+  ]
+}

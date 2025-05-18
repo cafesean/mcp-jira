@@ -1,0 +1,11 @@
+# Task ID: 7
+# Title: Adapt FieldsMixin and Remove Caching
+# Status: done
+# Dependencies: 5
+# Priority: medium
+# Description: Adapt methods in `FieldsMixin` (`jira/fields.py`) to accept a `pat: str` parameter, use `_create_jira_client_with_pat` for API calls, and remove global field caching.
+# Details:
+Modify methods in `FieldsMixin` (`get_fields`, `get_field_id`, etc.) to accept `pat: str`. Remove the global caches (`_field_ids_cache`, `_field_name_to_id_map`). Implement logic to fetch field metadata live using `jira_for_call = self._create_jira_client_with_pat(pat)` for every request.
+
+# Test Strategy:
+Test `get_fields` and `get_field_id` with different PATs. Verify that they fetch data live (e.g., by changing fields in Jira and re-fetching) and that no caching is used. Ensure `_create_jira_client_with_pat` is called.
