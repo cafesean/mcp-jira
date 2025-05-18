@@ -17,7 +17,7 @@ class SprintsMixin(JiraClient):
     """Mixin for Jira sprints operations."""
 
     def get_all_sprints_from_board(
-        self, board_id: str, state: str | None = None, start: int = 0, limit: int = 50
+        self, board_id: str, pat: str, state: str | None = None, start: int = 0, limit: int = 50
     ) -> list[dict[str, Any]]:
         """
         Get all sprints from a board.
@@ -31,8 +31,9 @@ class SprintsMixin(JiraClient):
         Returns:
             List of sprints
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
-            sprints = self.jira.get_all_sprints_from_board(
+            sprints = jira_for_call.get_all_sprints_from_board(
                 board_id=board_id,
                 state=state,
                 start=start,
@@ -49,7 +50,7 @@ class SprintsMixin(JiraClient):
             return []
 
     def get_all_sprints_from_board_model(
-        self, board_id: str, state: str | None = None, start: int = 0, limit: int = 50
+        self, board_id: str, pat: str, state: str | None = None, start: int = 0, limit: int = 50
     ) -> list[JiraSprint]:
         """
         Get all sprints as JiraSprint from a board.
@@ -65,6 +66,7 @@ class SprintsMixin(JiraClient):
         """
         sprints = self.get_all_sprints_from_board(
             board_id=board_id,
+            pat=pat,
             state=state,
             start=start,
             limit=limit,
@@ -74,6 +76,7 @@ class SprintsMixin(JiraClient):
     def update_sprint(
         self,
         sprint_id: str,
+        pat: str,
         sprint_name: str | None,
         state: str | None,
         start_date: str | None,
@@ -111,8 +114,9 @@ class SprintsMixin(JiraClient):
         if not sprint_id:
             logger.warning("Sprint ID is required.")
             return None
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
-            updated_sprint = self.jira.update_partially_sprint(
+            updated_sprint = jira_for_call.update_partially_sprint(
                 sprint_id=sprint_id,
                 data=data,
             )
@@ -136,6 +140,7 @@ class SprintsMixin(JiraClient):
         sprint_name: str,
         start_date: str,
         end_date: str,
+        pat: str,
         goal: str | None = None,
     ) -> JiraSprint:
         """
@@ -171,8 +176,9 @@ class SprintsMixin(JiraClient):
             if parsed_end_date is not None and parsed_start_date >= parsed_end_date:
                 raise ValueError("Start date must be before end date.")
 
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
-            sprint = self.jira.create_sprint(
+            sprint = jira_for_call.create_sprint(
                 name=sprint_name,
                 board_id=board_id,
                 start_date=start_date,

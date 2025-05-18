@@ -18,7 +18,7 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
     including project details, components, versions, and other project-related operations.
     """
 
-    def get_all_projects(self, include_archived: bool = False) -> list[dict[str, Any]]:
+    def get_all_projects(self, pat: str, include_archived: bool = False) -> list[dict[str, Any]]:
         """
         Get all projects visible to the current user.
 
@@ -28,19 +28,20 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
         Returns:
             List of project data dictionaries
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
             params = {}
             if include_archived:
                 params["includeArchived"] = "true"
 
-            projects = self.jira.projects(included_archived=include_archived)
+            projects = jira_for_call.projects(included_archived=include_archived)
             return projects if isinstance(projects, list) else []
 
         except Exception as e:
             logger.error(f"Error getting all projects: {str(e)}")
             return []
 
-    def get_project(self, project_key: str) -> dict[str, Any] | None:
+    def get_project(self, project_key: str, pat: str) -> dict[str, Any] | None:
         """
         Get project information by key.
 
@@ -50,8 +51,9 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
         Returns:
             Project data or None if not found
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
-            project_data = self.jira.project(project_key)
+            project_data = jira_for_call.project(project_key)
             if not isinstance(project_data, dict):
                 msg = f"Unexpected return value type from `jira.project`: {type(project_data)}"
                 logger.error(msg)
@@ -71,7 +73,7 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
         Returns:
             JiraProject model or None if not found
         """
-        project_data = self.get_project(project_key)
+        project_data = self.get_project(project_key, pat)
         if not project_data:
             return None
 
@@ -88,13 +90,13 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
             True if the project exists, False otherwise
         """
         try:
-            project = self.get_project(project_key)
+            project = self.get_project(project_key, pat)
             return project is not None
 
         except Exception:
             return False
 
-    def get_project_components(self, project_key: str) -> list[dict[str, Any]]:
+    def get_project_components(self, project_key: str, pat: str) -> list[dict[str, Any]]:
         """
         Get all components for a project.
 
@@ -104,8 +106,9 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
         Returns:
             List of component data dictionaries
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
-            components = self.jira.get_project_components(key=project_key)
+            components = jira_for_call.get_project_components(key=project_key)
             return components if isinstance(components, list) else []
 
         except Exception as e:
@@ -114,7 +117,7 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
             )
             return []
 
-    def get_project_versions(self, project_key: str) -> list[dict[str, Any]]:
+    def get_project_versions(self, project_key: str, pat: str) -> list[dict[str, Any]]:
         """
         Get all versions for a project.
 
@@ -124,15 +127,16 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
         Returns:
             List of version data dictionaries
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
-            versions = self.jira.get_project_versions(key=project_key)
+            versions = jira_for_call.get_project_versions(key=project_key)
             return versions if isinstance(versions, list) else []
 
         except Exception as e:
             logger.error(f"Error getting versions for project {project_key}: {str(e)}")
             return []
 
-    def get_project_roles(self, project_key: str) -> dict[str, Any]:
+    def get_project_roles(self, project_key: str, pat: str) -> dict[str, Any]:
         """
         Get all roles for a project.
 
@@ -142,8 +146,9 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
         Returns:
             Dictionary of role names mapped to role details
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
-            roles = self.jira.get_project_roles(project_key=project_key)
+            roles = jira_for_call.get_project_roles(project_key=project_key)
             return roles if isinstance(roles, dict) else {}
 
         except Exception as e:
@@ -151,7 +156,7 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
             return {}
 
     def get_project_role_members(
-        self, project_key: str, role_id: str
+        self, project_key: str, role_id: str, pat: str
     ) -> list[dict[str, Any]]:
         """
         Get members assigned to a specific role in a project.
@@ -163,8 +168,9 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
         Returns:
             List of role members
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
-            members = self.jira.get_project_actors_for_role_project(
+            members = jira_for_call.get_project_actors_for_role_project(
                 project_key=project_key, role_id=role_id
             )
             # Extract the actors from the response
@@ -179,7 +185,7 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
             )
             return []
 
-    def get_project_permission_scheme(self, project_key: str) -> dict[str, Any] | None:
+    def get_project_permission_scheme(self, project_key: str, pat: str) -> dict[str, Any] | None:
         """
         Get the permission scheme for a project.
 
@@ -189,8 +195,9 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
         Returns:
             Permission scheme data if found, None otherwise
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
-            scheme = self.jira.get_project_permission_scheme(
+            scheme = jira_for_call.get_project_permission_scheme(
                 project_id_or_key=project_key
             )
             if not isinstance(scheme, dict):
@@ -206,7 +213,7 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
             return None
 
     def get_project_notification_scheme(
-        self, project_key: str
+        self, project_key: str, pat: str
     ) -> dict[str, Any] | None:
         """
         Get the notification scheme for a project.
@@ -217,8 +224,9 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
         Returns:
             Notification scheme data if found, None otherwise
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
-            scheme = self.jira.get_project_notification_scheme(
+            scheme = jira_for_call.get_project_notification_scheme(
                 project_id_or_key=project_key
             )
             if not isinstance(scheme, dict):
@@ -233,7 +241,7 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
             )
             return None
 
-    def get_project_issue_types(self, project_key: str) -> list[dict[str, Any]]:
+    def get_project_issue_types(self, project_key: str, pat: str) -> list[dict[str, Any]]:
         """
         Get all issue types available for a project.
 
@@ -243,8 +251,9 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
         Returns:
             List of issue type data dictionaries
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
-            meta = self.jira.issue_createmeta(project=project_key)
+            meta = jira_for_call.issue_createmeta(project=project_key)
             if not isinstance(meta, dict):
                 msg = f"Unexpected return value type from `jira.issue_createmeta`: {type(meta)}"
                 logger.error(msg)
@@ -265,7 +274,7 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
             )
             return []
 
-    def get_project_issues_count(self, project_key: str) -> int:
+    def get_project_issues_count(self, project_key: str, pat: str) -> int:
         """
         Get the total number of issues in a project.
 
@@ -275,10 +284,11 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
         Returns:
             Count of issues in the project
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
             # Use JQL to count issues in the project
             jql = f"project = {project_key}"
-            result = self.jira.jql(jql=jql, fields="key", limit=1)
+            result = jira_for_call.jql(jql=jql, fields="key", limit=1)
             if not isinstance(result, dict):
                 msg = f"Unexpected return value type from `jira.jql`: {type(result)}"
                 logger.error(msg)
@@ -298,7 +308,7 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
             return 0
 
     def get_project_issues(
-        self, project_key: str, start: int = 0, limit: int = 50
+        self, project_key: str, pat: str, start: int = 0, limit: int = 50
     ) -> JiraSearchResult:
         """
         Get issues for a specific project.
@@ -314,14 +324,14 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
         try:
             # Use JQL to get issues in the project
             jql = f"project = {project_key}"
-
-            return self.search_issues(jql, start=start, limit=limit)
-
+ 
+            return self.search_issues(jql, pat, start=start, limit=limit)
+ 
         except Exception as e:
             logger.error(f"Error getting issues for project {project_key}: {str(e)}")
             return JiraSearchResult(issues=[], total=0)
 
-    def get_project_keys(self) -> list[str]:
+    def get_project_keys(self, pat: str) -> list[str]:
         """
         Get all project keys.
 
@@ -329,7 +339,7 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
             List of project keys
         """
         try:
-            projects = self.get_all_projects()
+            projects = self.get_all_projects(pat)
             project_keys: list[str] = []
             for project in projects:
                 key = project.get("key")
@@ -344,7 +354,7 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
             logger.error(f"Error getting project keys: {str(e)}")
             return []
 
-    def get_project_leads(self) -> dict[str, str]:
+    def get_project_leads(self, pat: str) -> dict[str, str]:
         """
         Get all project leads mapped to their projects.
 
@@ -352,7 +362,7 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
             Dictionary mapping project keys to lead usernames
         """
         try:
-            projects = self.get_all_projects()
+            projects = self.get_all_projects(pat)
             leads = {}
 
             for project in projects:
@@ -376,7 +386,7 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
             logger.error(f"Error getting project leads: {str(e)}")
             return {}
 
-    def get_user_accessible_projects(self, username: str) -> list[dict[str, Any]]:
+    def get_user_accessible_projects(self, username: str, pat: str) -> list[dict[str, Any]]:
         """
         Get projects that a specific user can access.
 
@@ -389,7 +399,7 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
         try:
             # This requires admin permissions
             # For non-admins, a different approach might be needed
-            all_projects = self.get_all_projects()
+            all_projects = self.get_all_projects(pat)
             accessible_projects = []
 
             for project in all_projects:
@@ -399,8 +409,9 @@ class ProjectsMixin(JiraClient, SearchOperationsProto):
 
                 try:
                     # Check if user has browse permission for this project
+                    jira_for_call = self._create_jira_client_with_pat(pat)
                     browse_users = (
-                        self.jira.get_users_with_browse_permission_to_a_project(
+                        jira_for_call.get_users_with_browse_permission_to_a_project(
                             username=username, project_key=project_key, limit=1
                         )
                     )

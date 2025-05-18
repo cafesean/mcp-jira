@@ -13,7 +13,7 @@ class CommentsMixin(JiraClient):
     """Mixin for Jira comment operations."""
 
     def get_issue_comments(
-        self, issue_key: str, limit: int = 50
+        self, issue_key: str, pat: str, limit: int = 50
     ) -> list[dict[str, Any]]:
         """
         Get comments for a specific issue.
@@ -28,8 +28,9 @@ class CommentsMixin(JiraClient):
         Raises:
             Exception: If there is an error getting comments
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
-            comments = self.jira.issue_get_comments(issue_key)
+            comments = jira_for_call.issue_get_comments(issue_key)
 
             if not isinstance(comments, dict):
                 msg = f"Unexpected return value type from `jira.issue_get_comments`: {type(comments)}"
@@ -52,7 +53,7 @@ class CommentsMixin(JiraClient):
             logger.error(f"Error getting comments for issue {issue_key}: {str(e)}")
             raise Exception(f"Error getting comments: {str(e)}") from e
 
-    def add_comment(self, issue_key: str, comment: str) -> dict[str, Any]:
+    def add_comment(self, issue_key: str, comment: str, pat: str) -> dict[str, Any]:
         """
         Add a comment to an issue.
 
@@ -66,11 +67,12 @@ class CommentsMixin(JiraClient):
         Raises:
             Exception: If there is an error adding the comment
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
             # Convert Markdown to Jira's markup format
             jira_formatted_comment = self._markdown_to_jira(comment)
-
-            result = self.jira.issue_add_comment(issue_key, jira_formatted_comment)
+ 
+            result = jira_for_call.issue_add_comment(issue_key, jira_formatted_comment)
             if not isinstance(result, dict):
                 msg = f"Unexpected return value type from `jira.issue_add_comment`: {type(result)}"
                 logger.error(msg)

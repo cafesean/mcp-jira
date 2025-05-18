@@ -11,11 +11,9 @@ from fastmcp.client import FastMCPTransport
 
 from src.mcp_atlassian.jira import JiraFetcher
 from src.mcp_atlassian.servers.context import MainAppContext
-from tests.fixtures.jira_mocks import (
-    MOCK_JIRA_COMMENTS_SIMPLIFIED,
-    MOCK_JIRA_ISSUE_RESPONSE_SIMPLIFIED,
-    MOCK_JIRA_JQL_RESPONSE_SIMPLIFIED,
-)
+from tests.fixtures.jira_mocks import (MOCK_JIRA_COMMENTS_SIMPLIFIED,
+                                       MOCK_JIRA_ISSUE_RESPONSE_SIMPLIFIED,
+                                       MOCK_JIRA_JQL_RESPONSE_SIMPLIFIED)
 
 
 @pytest.fixture
@@ -241,33 +239,29 @@ def test_jira_mcp(mock_jira_fetcher):
     )
 
     # Import the actual tool functions we want to test
-    from src.mcp_atlassian.servers.jira import (
-        add_comment,  # Add other tools as needed
-        add_worklog,
-        batch_create_issues,
-        batch_get_changelogs,
-        create_issue,
-        create_issue_link,
-        delete_issue,
-        download_attachments,
-        get_agile_boards,
-        get_board_issues,
-        get_issue,
-        get_link_types,
-        get_project_issues,
-        get_sprint_issues,
-        get_sprints_from_board,
-        get_transitions,
-        get_user_profile,  # Add import for our new tool
-        get_worklog,
-        link_to_epic,
-        remove_issue_link,
-        search,
-        search_fields,
-        transition_issue,
-        update_issue,
-        update_sprint,
-    )
+    from src.mcp_atlassian.servers.jira import \
+        add_comment  # Add other tools as needed
+    from src.mcp_atlassian.servers.jira import \
+        get_user_profile  # Add import for our new tool
+    from src.mcp_atlassian.servers.jira import (add_worklog,
+                                                batch_create_issues,
+                                                batch_get_changelogs,
+                                                create_issue,
+                                                create_issue_link,
+                                                delete_issue,
+                                                download_attachments,
+                                                get_agile_boards,
+                                                get_board_issues, get_issue,
+                                                get_link_types,
+                                                get_project_issues,
+                                                get_sprint_issues,
+                                                get_sprints_from_board,
+                                                get_transitions, get_worklog,
+                                                link_to_epic,
+                                                remove_issue_link, search,
+                                                search_fields,
+                                                transition_issue, update_issue,
+                                                update_sprint)
 
     # Register the tool functions with our test MCP instance
     test_mcp.tool()(get_issue)
@@ -531,16 +525,66 @@ async def test_get_user_profile_tool_success(jira_client, mock_jira_fetcher):
 
 @pytest.mark.anyio
 async def test_get_user_profile_tool_not_found(jira_client, mock_jira_fetcher):
-    """Test the get_user_profile tool handles 'user not found' errors."""
-    # Call the tool with a non-existent user
-    response = await jira_client.call_tool(
-        "get_user_profile", {"user_identifier": "nonexistent@example.com"}
+    """Test the get_user_profile tool when user is not found."""
+    # Configure the mock fetcher to raise ValueError for a specific identifier
+    mock_jira_fetcher.get_user_profile_by_identifier.side_effect = ValueError(
+        "User 'nonexistent@example.com' not found."
     )
 
-    # Verify the response contains an error
-    assert len(response) == 1
-    result_data = json.loads(response[0].text)
-    assert result_data["success"] is False
-    assert "error" in result_data
-    assert "not found" in result_data["error"]
-    assert result_data["user_identifier"] == "nonexistent@example.com"
+    response = await jira_client.call_tool(
+        "get_user_profile", {"user_identifier": "nonexistent@example.com", "jira_pat": "valid_pat"}
+    )
+
+    assert isinstance(response, list)
+    assert len(response) > 0
+    text_content = response[0]
+    assert text_content.type == "text"
+
+    content = json.loads(text_content.text)
+    assert content["success"] is False
+    assert "error" in content
+    assert "not found" in content["error"].lower()
+    assert content["user_identifier"] == "nonexistent@example.com"
+
+    # Verify the mock was called with correct parameters
+    mock_jira_fetcher.get_user_profile_by_identifier.assert_called_once_with(
+        "nonexistent@example.com", jira_pat="valid_pat"
+    )
+
+@pytest.mark.anyio
+async def test_get_user_profile_tool_missing_pat(jira_client):
+    """Test the get_user_profile tool when PAT is missing."""
+    with pytest.raises(Exception) as excinfo: # FastMCP raises Validation Error
+        await jira_client.call_tool(
+            "get_user_profile", {"user_identifier": "test@example.com"}
+        )
+    # Assert that the error message indicates a missing required parameter
+    assert "missing required parameter `jira_pat`" in str(excinfo.value)
+
+@pytest.mark.anyio
+async def test_get_user_profile_tool_invalid_pat(jira_client, mock_jira_fetcher):
+    """Test the get_user_profile tool when an invalid PAT is provided."""
+    # Configure the mock fetcher to raise an authentication error for an invalid PAT
+    from mcp_atlassian.exceptions import MCPAtlassianAuthenticationError
+    mock_jira_fetcher.get_user_profile_by_identifier.side_effect = MCPAtlassianAuthenticationError(
+        "Invalid PAT provided."
+    )
+
+    response = await jira_client.call_tool(
+        "get_user_profile", {"user_identifier": "test@example.com", "jira_pat": "invalid_pat"}
+    )
+
+    assert isinstance(response, list)
+    assert len(response) > 0
+    text_content = response[0]
+    assert text_content.type == "text"
+
+    content = json.loads(text_content.text)
+    assert content["success"] is False
+    assert "error" in content
+    assert "authentication/permission error" in content["error"].lower()
+
+    # Verify the mock was called with correct parameters
+    mock_jira_fetcher.get_user_profile_by_identifier.assert_called_once_with(
+        "test@example.com", jira_pat="invalid_pat"
+    )

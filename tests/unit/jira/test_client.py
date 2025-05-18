@@ -59,6 +59,18 @@ def test_init_with_basic_auth():
         assert client._current_user_account_id is None
 
 
+def test_init_jira_is_none():
+    """Test that self.jira is None immediately after initialization."""
+    config = JiraConfig(
+        url="https://test.atlassian.net",
+        auth_type="basic",
+        username="test_username",
+        api_token="test_token",
+    )
+    client = JiraClient(config=config)
+    assert client.jira is None
+
+
 def test_init_with_token_auth():
     """Test initializing the client with token auth configuration."""
     with (
@@ -110,6 +122,65 @@ def test_init_from_env():
 
         mock_from_env.assert_called_once()
         assert client.config == mock_config
+
+
+def test__create_jira_client_with_pat():
+    """Test the _create_jira_client_with_pat method."""
+    with (
+        patch("mcp_atlassian.jira.client.Jira") as mock_jira,
+        patch(
+            "mcp_atlassian.jira.client.configure_ssl_verification"
+        ) as mock_configure_ssl,
+        patch("mcp_atlassian.jira.client.logger") as mock_logger,
+    ):
+        mock_jira_instance = MagicMock()
+        mock_jira_instance._session = MagicMock()
+        mock_jira_instance._session.proxies = {}
+        mock_jira.return_value = mock_jira_instance
+
+        config = JiraConfig(
+            url="https://test.atlassian.net",
+            auth_type="pat",
+            personal_token="test_pat",
+            is_cloud=True,
+            ssl_verify=False,
+            http_proxy="http://proxy:8080",
+        )
+        client = JiraClient(config=config)
+
+        pat = "valid_pat_token"
+        jira_client = client._create_jira_client_with_pat(pat)
+
+        # Verify Jira was initialized correctly
+        mock_jira.assert_called_once_with(
+            url="https://test.atlassian.net",
+            token=pat,
+            cloud=True,
+            verify_ssl=False,
+        )
+
+        # Verify SSL verification was configured
+        mock_configure_ssl.assert_called_once_with(
+            service_name="Jira",
+            url="https://test.atlassian.net",
+            session=mock_jira_instance._session,
+            ssl_verify=False,
+        )
+
+        # Verify proxy settings were applied
+        assert mock_jira_instance._session.proxies["http"] == "http://proxy:8080"
+
+        # Verify the correct Jira instance was returned
+        assert jira_client == mock_jira_instance
+
+        # Verify the log message
+        mock_logger.info.assert_called_once_with(
+            "Creating Jira client for request using provided PAT."
+        )
+        # Ensure PAT is not in log arguments (check all calls to info)
+        for call_args in mock_logger.info.call_args_list:
+            for arg in call_args[0]:
+                assert pat not in str(arg)
 
 
 def test_clean_text():
@@ -209,6 +280,105 @@ def _test_get_paged(method: Literal["get", "post"]):
                 ),
             ]
             assert mock_post.call_args_list == expected_calls
+
+
+def test_get_paged_get():
+    """Test the get_paged method for GET requests."""
+    _test_get_paged("get")
+
+
+def test_get_paged_with_pat(monkeypatch):
+    """Test the get_paged method with a provided PAT."""
+    with (
+        patch(
+            "mcp_atlassian.jira.client.Jira.get", new_callable=DeepcopyMock
+        ) as mock_get,
+        patch(
+            "mcp_atlassian.jira.client.Jira.post", new_callable=DeepcopyMock
+        ) as mock_post,
+        patch(
+            "mcp_atlassian.jira.client.configure_ssl_verification"
+        ),
+        patch(
+            "mcp_atlassian.jira.client.JiraClient._create_jira_client_with_pat"
+        ) as mock_create_client,
+    ):
+        config = JiraConfig(
+            url="https://test.atlassian.net",
+            auth_type="basic", # Auth type doesn't matter for this test as we provide PAT
+            username="test_username",
+            api_token="test_token",
+            is_cloud=True, # Paged requests only for cloud
+        )
+        client = JiraClient(config=config)
+
+        # Mock the client created by _create_jira_client_with_pat
+        mock_jira_instance = MagicMock()
+        mock_create_client.return_value = mock_jira_instance
+
+        # Mock paged responses from the mocked Jira instance
+        mock_responses = [
+            {"data": "page1", "nextPageToken": "token1"},
+            {"data": "page2", "nextPageToken": "token2"},
+            {"data": "page3"},  # Last page does not have nextPageToken
+        ]
+
+        # Create mock method with side effect to return responses in sequence
+        method: Literal["get", "post"] = "get" # Test with GET, POST is similar
+        if method == "get":
+            mock_jira_instance.get.side_effect = mock_responses
+            mock_jira_instance.post.side_effect = RuntimeError("This should not be called")
+        else:
+             mock_jira_instance.post.side_effect = mock_responses
+             mock_jira_instance.get.side_effect = RuntimeError("This should not be called")
+
+
+        # Run the method with a PAT
+        pat = "test_provided_pat"
+        params = {"initial": "params"}
+        results = client.get_paged(method, "/test/url", params, pat=pat)
+
+        # Verify the results
+        assert results == mock_responses
+
+        # Verify _create_jira_client_with_pat was called with the correct PAT
+        mock_create_client.assert_called_once_with(pat)
+
+        # Verify the mocked Jira instance's method was called with correct parameters
+        if method == "get":
+            expected_calls = [
+                call(path="/test/url", params={"initial": "params"}, absolute=False),
+                call(
+                    path="/test/url",
+                    params={"initial": "params", "nextPageToken": "token1"},
+                    absolute=False,
+                ),
+                call(
+                    path="/test/url",
+                    params={"initial": "params", "nextPageToken": "token2"},
+                    absolute=False,
+                ),
+            ]
+            mock_jira_instance.get.assert_has_calls(expected_calls)
+            assert mock_jira_instance.get.call_count == 3
+            mock_jira_instance.post.assert_not_called()
+        else:
+             expected_calls = [
+                call(path="/test/url", json={"initial": "params"}, absolute=False),
+                call(
+                    path="/test/url",
+                    json={"initial": "params", "nextPageToken": "token1"},
+                    absolute=False,
+                ),
+                call(
+                    path="/test/url",
+                    json={"initial": "params", "nextPageToken": "token2"},
+                    absolute=False,
+                ),
+            ]
+             mock_jira_instance.post.assert_has_calls(expected_calls)
+             assert mock_jira_instance.post.call_count == 3
+             mock_jira_instance.get.assert_not_called()
 
 
 def test_get_paged_get():

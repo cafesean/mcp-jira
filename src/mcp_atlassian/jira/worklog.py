@@ -65,6 +65,7 @@ class WorklogMixin(JiraClient):
         self,
         issue_key: str,
         time_spent: str,
+        pat: str,
         comment: str | None = None,
         started: str | None = None,
         original_estimate: str | None = None,
@@ -87,6 +88,7 @@ class WorklogMixin(JiraClient):
         Raises:
             Exception: If there's an error adding the worklog
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
             # Convert time_spent string to seconds
             time_spent_seconds = self._parse_time_spent(time_spent)
@@ -95,14 +97,14 @@ class WorklogMixin(JiraClient):
             if comment:
                 # Check if _markdown_to_jira is available (from CommentsMixin)
                 if hasattr(self, "_markdown_to_jira"):
-                    comment = self._markdown_to_jira(comment)
+                    comment = self._markdown_to_jira(comment, pat)
 
             # Step 1: Update original estimate if provided (separate API call)
             original_estimate_updated = False
             if original_estimate:
                 try:
                     fields = {"timetracking": {"originalEstimate": original_estimate}}
-                    self.jira.edit_issue(issue_id_or_key=issue_key, fields=fields)
+                    jira_for_call.edit_issue(issue_id_or_key=issue_key, fields=fields)
                     original_estimate_updated = True
                     logger.info(f"Updated original estimate for issue {issue_key}")
                 except Exception as e:  # noqa: BLE001 - Intentional fallback with logging
@@ -131,7 +133,7 @@ class WorklogMixin(JiraClient):
             base_url = self.jira.resource_url("issue")
             url = f"{base_url}/{issue_key}/worklog"
 
-            result = self.jira.post(url, data=worklog_data, params=params)
+            result = jira_for_call.post(url, data=worklog_data, params=params)
             if not isinstance(result, dict):
                 msg = f"Unexpected return value type from `jira.post`: {type(result)}"
                 logger.error(msg)
@@ -154,7 +156,7 @@ class WorklogMixin(JiraClient):
             logger.error(f"Error adding worklog to issue {issue_key}: {str(e)}")
             raise Exception(f"Error adding worklog: {str(e)}") from e
 
-    def get_worklog(self, issue_key: str) -> dict[str, Any]:
+    def get_worklog(self, issue_key: str, pat: str) -> dict[str, Any]:
         """
         Get the worklog data for an issue.
 
@@ -164,13 +166,14 @@ class WorklogMixin(JiraClient):
         Returns:
             Raw worklog data from the API
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
-            return self.jira.worklog(issue_key)  # type: ignore[attr-defined]
+            return jira_for_call.worklog(issue_key)  # type: ignore[attr-defined]
         except Exception as e:
             logger.warning(f"Error getting worklog for {issue_key}: {e}")
             return {"worklogs": []}
 
-    def get_worklog_models(self, issue_key: str) -> list[JiraWorklog]:
+    def get_worklog_models(self, issue_key: str, pat: str) -> list[JiraWorklog]:
         """
         Get all worklog entries for an issue as JiraWorklog models.
 
@@ -180,7 +183,7 @@ class WorklogMixin(JiraClient):
         Returns:
             List of JiraWorklog models
         """
-        worklog_data = self.get_worklog(issue_key)
+        worklog_data = self.get_worklog(issue_key, pat)
         result: list[JiraWorklog] = []
 
         if "worklogs" in worklog_data and worklog_data["worklogs"]:
@@ -190,7 +193,7 @@ class WorklogMixin(JiraClient):
 
         return result
 
-    def get_worklogs(self, issue_key: str) -> list[dict[str, Any]]:
+    def get_worklogs(self, issue_key: str, pat: str) -> list[dict[str, Any]]:
         """
         Get all worklog entries for an issue.
 
@@ -203,8 +206,9 @@ class WorklogMixin(JiraClient):
         Raises:
             Exception: If there's an error getting the worklogs
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
-            result = self.jira.issue_get_worklog(issue_key)
+            result = jira_for_call.issue_get_worklog(issue_key)
             if not isinstance(result, dict):
                 msg = f"Unexpected return value type from `jira.issue_get_worklog`: {type(result)}"
                 logger.error(msg)

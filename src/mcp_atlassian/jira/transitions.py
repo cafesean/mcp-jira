@@ -16,7 +16,7 @@ logger = logging.getLogger("mcp-jira")
 class TransitionsMixin(JiraClient, IssueOperationsProto, UsersOperationsProto):
     """Mixin for Jira transition operations."""
 
-    def get_available_transitions(self, issue_key: str) -> list[dict[str, Any]]:
+    def get_available_transitions(self, issue_key: str, pat: str) -> list[dict[str, Any]]:
         """
         Get the available status transitions for an issue.
 
@@ -30,8 +30,9 @@ class TransitionsMixin(JiraClient, IssueOperationsProto, UsersOperationsProto):
             MCPAtlassianAuthenticationError: If authentication fails with the Jira API (401/403)
             Exception: If there is an error getting transitions
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
-            transitions_data = self.jira.get_issue_transitions(issue_key)
+            transitions_data = jira_for_call.get_issue_transitions(issue_key)
             result: list[dict[str, Any]] = []
 
             for transition in transitions_data:
@@ -83,7 +84,7 @@ class TransitionsMixin(JiraClient, IssueOperationsProto, UsersOperationsProto):
             logger.error(error_msg)
             raise Exception(f"Error getting transitions: {str(e)}") from e
 
-    def get_transitions(self, issue_key: str) -> list[dict[str, Any]]:
+    def get_transitions(self, issue_key: str, pat: str) -> list[dict[str, Any]]:
         """
         Get the raw transitions data for an issue.
 
@@ -93,9 +94,10 @@ class TransitionsMixin(JiraClient, IssueOperationsProto, UsersOperationsProto):
         Returns:
             Raw transitions data from the API
         """
-        return self.jira.get_issue_transitions(issue_key)
+        jira_for_call = self._create_jira_client_with_pat(pat)
+        return jira_for_call.get_issue_transitions(issue_key)
 
-    def get_transitions_models(self, issue_key: str) -> list[JiraTransition]:
+    def get_transitions_models(self, issue_key: str, pat: str) -> list[JiraTransition]:
         """
         Get the available status transitions for an issue as JiraTransition models.
 
@@ -118,6 +120,7 @@ class TransitionsMixin(JiraClient, IssueOperationsProto, UsersOperationsProto):
         self,
         issue_key: str,
         transition_id: str | int,
+        pat: str,
         fields: dict[str, Any] | None = None,
         comment: str | None = None,
     ) -> JiraIssue:
@@ -137,12 +140,13 @@ class TransitionsMixin(JiraClient, IssueOperationsProto, UsersOperationsProto):
             MCPAtlassianAuthenticationError: If authentication fails with the Jira API (401/403)
             ValueError: If there is an error transitioning the issue
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
             # Normalize transition_id to an integer when possible, or string otherwise
             normalized_transition_id = self._normalize_transition_id(transition_id)
 
             # Validate that this is a valid transition ID
-            valid_transitions = self.get_transitions_models(issue_key)
+            valid_transitions = self.get_transitions_models(issue_key, pat)
             valid_ids = [t.id for t in valid_transitions]
 
             # Convert string IDs to integers for proper comparison if normalized_transition_id is an integer
@@ -176,7 +180,7 @@ class TransitionsMixin(JiraClient, IssueOperationsProto, UsersOperationsProto):
             # Sanitize fields if provided
             fields_for_api = None
             if fields:
-                sanitized_fields = self._sanitize_transition_fields(fields)
+                sanitized_fields = self._sanitize_transition_fields(fields, pat)
                 if sanitized_fields:
                     fields_for_api = sanitized_fields
 
@@ -185,7 +189,7 @@ class TransitionsMixin(JiraClient, IssueOperationsProto, UsersOperationsProto):
             if comment:
                 # Create a temporary dict to hold the transition data
                 temp_transition_data = {}
-                self._add_comment_to_transition_data(temp_transition_data, comment)
+                self._add_comment_to_transition_data(temp_transition_data, comment, pat)
                 update_for_api = temp_transition_data.get("update")
 
             # Log the transition request for debugging
@@ -198,7 +202,7 @@ class TransitionsMixin(JiraClient, IssueOperationsProto, UsersOperationsProto):
             if target_status_name:
                 # If we have a status name, use set_issue_status
                 logger.info(f"Using status name '{target_status_name}' for transition")
-                self.jira.set_issue_status(
+                jira_for_call.set_issue_status(
                     issue_key=issue_key,
                     status_name=target_status_name,
                     fields=fields_for_api,
@@ -215,7 +219,7 @@ class TransitionsMixin(JiraClient, IssueOperationsProto, UsersOperationsProto):
                     normalized_transition_id = int(normalized_transition_id)
 
                 # Use set_issue_status_by_transition_id for direct ID transition
-                self.jira.set_issue_status_by_transition_id(
+                jira_for_call.set_issue_status_by_transition_id(
                     issue_key=issue_key, transition_id=normalized_transition_id
                 )
 
@@ -228,12 +232,12 @@ class TransitionsMixin(JiraClient, IssueOperationsProto, UsersOperationsProto):
                         payload["update"] = update_for_api
 
                     if payload:
-                        base_url = self.jira.resource_url("issue")
+                        base_url = jira_for_call.resource_url("issue")
                         url = f"{base_url}/{issue_key}"
-                        self.jira.put(url, data=payload)
+                        jira_for_call.put(url, data=payload)
 
             # Return the updated issue
-            return self.get_issue(issue_key)
+            return self.get_issue(issue_key, pat)
         except HTTPError as http_err:
             if http_err.response is not None and http_err.response.status_code in [
                 401,
@@ -354,7 +358,7 @@ class TransitionsMixin(JiraClient, IssueOperationsProto, UsersOperationsProto):
             logger.error(f"Failed to convert transition_id: {str(e)}")
             return 0
 
-    def _sanitize_transition_fields(self, fields: dict[str, Any]) -> dict[str, Any]:
+    def _sanitize_transition_fields(self, fields: dict[str, Any], pat: str) -> dict[str, Any]:
         """
         Sanitize fields to ensure they're valid for the Jira API.
 
@@ -374,7 +378,7 @@ class TransitionsMixin(JiraClient, IssueOperationsProto, UsersOperationsProto):
             if key == "assignee" and isinstance(value, str):
                 try:
                     # Check if _get_account_id is available (from UsersMixin)
-                    account_id = self._get_account_id(value)
+                    account_id = self._get_account_id(value, pat)
                     sanitized_fields[key] = {"accountId": account_id}
                 except Exception as e:  # noqa: BLE001 - Intentional fallback with logging
                     error_msg = f"Could not resolve assignee '{value}': {str(e)}"
@@ -387,7 +391,7 @@ class TransitionsMixin(JiraClient, IssueOperationsProto, UsersOperationsProto):
         return sanitized_fields
 
     def _add_comment_to_transition_data(
-        self, transition_data: dict[str, Any], comment: str | int
+        self, transition_data: dict[str, Any], comment: str | int, pat: str
     ) -> None:
         """
         Add comment to transition data.
@@ -408,7 +412,7 @@ class TransitionsMixin(JiraClient, IssueOperationsProto, UsersOperationsProto):
         # Convert markdown to Jira format if _markdown_to_jira is available
         jira_formatted_comment = comment_str
         if hasattr(self, "_markdown_to_jira"):
-            jira_formatted_comment = self._markdown_to_jira(comment_str)
+            jira_formatted_comment = self._markdown_to_jira(comment_str, pat)
 
         # Add to transition data
         transition_data["update"] = {

@@ -20,6 +20,7 @@ class SearchMixin(JiraClient, IssueOperationsProto):
     def search_issues(
         self,
         jql: str,
+        pat: str,
         fields: list[str] | tuple[str, ...] | set[str] | str | None = None,
         start: int = 0,
         limit: int = 50,
@@ -46,6 +47,7 @@ class SearchMixin(JiraClient, IssueOperationsProto):
             MCPAtlassianAuthenticationError: If authentication fails with the Jira API (401/403)
             Exception: If there is an error searching for issues
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
             # Use projects_filter parameter if provided, otherwise fall back to config
             filter_to_use = projects_filter or self.config.projects_filter
@@ -87,8 +89,8 @@ class SearchMixin(JiraClient, IssueOperationsProto):
                 try:
                     # Call 1: Get metadata (including total) using standard search API
                     metadata_params = {"jql": jql, "maxResults": 0}
-                    metadata_response = self.jira.get(
-                        self.jira.resource_url("search"), params=metadata_params
+                    metadata_response = jira_for_call.get(
+                        jira_for_call.resource_url("search"), params=metadata_params
                     )
 
                     if (
@@ -111,7 +113,7 @@ class SearchMixin(JiraClient, IssueOperationsProto):
                     )
 
                 # Call 2: Get the actual issues using the enhanced method
-                issues_response_list = self.jira.enhanced_jql_get_list_of_tickets(
+                issues_response_list = jira_for_call.enhanced_jql_get_list_of_tickets(
                     jql, fields=fields_param, limit=limit, expand=expand
                 )
 
@@ -135,7 +137,7 @@ class SearchMixin(JiraClient, IssueOperationsProto):
                 return search_result
             else:
                 limit = min(limit, 50)
-                response = self.jira.jql(
+                response = jira_for_call.jql(
                     jql, fields=fields_param, start=start, limit=limit, expand=expand
                 )
                 if not isinstance(response, dict):
@@ -173,6 +175,7 @@ class SearchMixin(JiraClient, IssueOperationsProto):
         self,
         board_id: str,
         jql: str,
+        pat: str,
         fields: str | None = None,
         start: int = 0,
         limit: int = 50,
@@ -195,13 +198,14 @@ class SearchMixin(JiraClient, IssueOperationsProto):
         Raises:
             Exception: If there is an error getting board issues
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
             # Determine fields_param
             fields_param = fields
             if fields_param is None:
                 fields_param = ",".join(DEFAULT_READ_JIRA_FIELDS)
-
-            response = self.jira.get_issues_for_board(
+ 
+            response = jira_for_call.get_issues_for_board(
                 board_id=board_id,
                 jql=jql,
                 fields=fields_param,
@@ -235,6 +239,7 @@ class SearchMixin(JiraClient, IssueOperationsProto):
     def get_sprint_issues(
         self,
         sprint_id: str,
+        pat: str,
         fields: str | None = None,
         start: int = 0,
         limit: int = 50,
@@ -254,13 +259,14 @@ class SearchMixin(JiraClient, IssueOperationsProto):
         Raises:
             Exception: If there is an error getting board issues
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
             # Determine fields_param
             fields_param = fields
             if fields_param is None:
                 fields_param = ",".join(DEFAULT_READ_JIRA_FIELDS)
 
-            response = self.jira.get_sprint_issues(
+            response = jira_for_call.get_sprint_issues(
                 sprint_id=sprint_id,
                 start=start,
                 limit=limit,

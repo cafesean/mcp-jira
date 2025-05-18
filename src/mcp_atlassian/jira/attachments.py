@@ -16,7 +16,7 @@ logger = logging.getLogger("mcp-jira")
 class AttachmentsMixin(JiraClient, AttachmentsOperationsProto):
     """Mixin for Jira attachment operations."""
 
-    def download_attachment(self, url: str, target_path: str) -> bool:
+    def download_attachment(self, url: str, target_path: str, pat: str) -> bool:
         """
         Download a Jira attachment to the specified path.
 
@@ -31,6 +31,7 @@ class AttachmentsMixin(JiraClient, AttachmentsOperationsProto):
             logger.error("No URL provided for attachment download")
             return False
 
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
             # Convert to absolute path if relative
             if not os.path.isabs(target_path):
@@ -42,7 +43,7 @@ class AttachmentsMixin(JiraClient, AttachmentsOperationsProto):
             os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
             # Use the Jira session to download the file
-            response = self.jira._session.get(url, stream=True)
+            response = jira_for_call._session.get(url, stream=True)
             response.raise_for_status()
 
             # Write the file to disk
@@ -66,7 +67,7 @@ class AttachmentsMixin(JiraClient, AttachmentsOperationsProto):
             return False
 
     def download_issue_attachments(
-        self, issue_key: str, target_dir: str
+        self, issue_key: str, target_dir: str, pat: str
     ) -> dict[str, Any]:
         """
         Download all attachments for a Jira issue.
@@ -92,7 +93,8 @@ class AttachmentsMixin(JiraClient, AttachmentsOperationsProto):
 
         # Get the issue with attachments
         logger.info(f"Fetching issue {issue_key} with attachments")
-        issue_data = self.jira.issue(issue_key, fields="attachment")
+        jira_for_call = self._create_jira_client_with_pat(pat)
+        issue_data = jira_for_call.issue(issue_key, fields="attachment")
 
         if not isinstance(issue_data, dict):
             msg = f"Unexpected return value type from `jira.issue`: {type(issue_data)}"
@@ -140,7 +142,7 @@ class AttachmentsMixin(JiraClient, AttachmentsOperationsProto):
             file_path = target_path / safe_filename
 
             # Download the attachment
-            success = self.download_attachment(attachment.url, str(file_path))
+            success = self.download_attachment(attachment.url, str(file_path), pat)
 
             if success:
                 downloaded.append(
@@ -163,7 +165,7 @@ class AttachmentsMixin(JiraClient, AttachmentsOperationsProto):
             "failed": failed,
         }
 
-    def upload_attachment(self, issue_key: str, file_path: str) -> dict[str, Any]:
+    def upload_attachment(self, issue_key: str, file_path: str, pat: str) -> dict[str, Any]:
         """
         Upload a single attachment to a Jira issue.
 
@@ -182,6 +184,7 @@ class AttachmentsMixin(JiraClient, AttachmentsOperationsProto):
             logger.error("No file path provided for attachment upload")
             return {"success": False, "error": "No file path provided"}
 
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
             # Convert to absolute path if relative
             if not os.path.isabs(file_path):
@@ -197,7 +200,7 @@ class AttachmentsMixin(JiraClient, AttachmentsOperationsProto):
             # Use the Jira API to upload the file
             filename = os.path.basename(file_path)
             with open(file_path, "rb") as file:
-                attachment = self.jira.add_attachment(
+                attachment = jira_for_call.add_attachment(
                     issue_key=issue_key, filename=file_path
                 )
 
@@ -228,7 +231,7 @@ class AttachmentsMixin(JiraClient, AttachmentsOperationsProto):
             return {"success": False, "error": error_msg}
 
     def upload_attachments(
-        self, issue_key: str, file_paths: list[str]
+        self, issue_key: str, file_paths: list[str], pat: str
     ) -> dict[str, Any]:
         """
         Upload multiple attachments to a Jira issue.
@@ -255,7 +258,7 @@ class AttachmentsMixin(JiraClient, AttachmentsOperationsProto):
         failed = []
 
         for file_path in file_paths:
-            result = self.upload_attachment(issue_key, file_path)
+            result = self.upload_attachment(issue_key, file_path, pat)
 
             if result.get("success"):
                 uploaded.append(

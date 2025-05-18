@@ -26,8 +26,8 @@ logger = logging.getLogger("mcp-jira")
 class UsersMixin(JiraClient):
     """Mixin for Jira user operations."""
 
-    def get_current_user_account_id(self) -> str:
-        """Get the account ID of the current user.
+    def get_current_user_account_id(self, pat: str) -> str:
+        """Get the account ID of the current user using a specific PAT.
 
         Returns:
             Account ID of the current user
@@ -35,24 +35,27 @@ class UsersMixin(JiraClient):
         Raises:
             Exception: If unable to get the current user's account ID
         """
-        if self._current_user_account_id is not None:
-            return self._current_user_account_id
+        # We always need to use the provided PAT for this call, so we don't cache
+        # the account ID at the instance level for this method.
+        # The cache _current_user_account_id is used by other methods that don't
+        # take a PAT and rely on the instance's default client.
 
         try:
-            url = f"{self.config.url.rstrip('/')}/rest/api/2/myself"
+            # Use the provided PAT to create a client for this specific call
+            jira_for_call = self._create_jira_client_with_pat(pat)
+
+            url = f"{jira_for_call.config.url.rstrip('/')}/rest/api/2/myself"
             headers = {"Accept": "application/json"}
 
-            if self.config.auth_type == "token":
-                headers["Authorization"] = f"Bearer {self.config.personal_token}"
-                auth = None
-            else:
-                auth = (self.config.username or "", self.config.api_token or "")
+            # The client created with PAT will have auth_type 'token' and personal_token set
+            headers["Authorization"] = f"Bearer {jira_for_call.config.personal_token}"
+            auth = None # auth is handled by the Authorization header
 
             response = requests.get(
                 url,
                 headers=headers,
-                auth=auth,
-                verify=self.config.ssl_verify,
+                auth=auth, # Should be None
+                verify=jira_for_call.config.ssl_verify,
                 timeout=30,
             )
 
@@ -92,14 +95,15 @@ class UsersMixin(JiraClient):
                 error_msg = "Could not find accountId, key, or name in user data"
                 raise ValueError(error_msg)
 
-            self._current_user_account_id = account_id
+            # Do NOT cache the account ID here as it's specific to the provided PAT
+            # self._current_user_account_id = account_id
             return account_id
         except Exception as e:
             logger.error(f"Error getting current user account ID: {str(e)}")
             error_msg = f"Unable to get current user account ID: {str(e)}"
             raise Exception(error_msg)
 
-    def _get_account_id(self, assignee: str) -> str:
+    def _get_account_id(self, assignee: str, pat: str | None = None) -> str:
         """Get the account ID for a username.
 
         Args:
@@ -116,19 +120,19 @@ class UsersMixin(JiraClient):
             return assignee
 
         # First try direct lookup
-        account_id = self._lookup_user_directly(assignee)
+        account_id = self._lookup_user_directly(assignee, pat)
         if account_id:
             return account_id
 
         # If that fails, try permissions-based lookup
-        account_id = self._lookup_user_by_permissions(assignee)
+        account_id = self._lookup_user_by_permissions(assignee, pat)
         if account_id:
             return account_id
 
         error_msg = f"Could not find account ID for user: {assignee}"
         raise ValueError(error_msg)
 
-    def _lookup_user_directly(self, username: str) -> str | None:
+    def _lookup_user_directly(self, username: str, pat: str | None = None) -> str | None:
         """Look up a user account ID directly.
 
         Args:
@@ -145,9 +149,12 @@ class UsersMixin(JiraClient):
             else:
                 params["username"] = username  # Use 'username' for Server/DC
 
-            response = self.jira.user_find_by_user_string(**params, start=0, limit=1)
+            # Use the provided PAT if available, otherwise use the instance's default client
+            jira_for_call = self._create_jira_client_with_pat(pat) if pat else self.jira
+
+            response = jira_for_call.user_find_by_user_string(**params, start=0, limit=1)
             if not isinstance(response, list):
-                msg = f"Unexpected return value type from `jira.user_find_by_user_string`: {type(response)}"
+                msg = f"Unexpected return value type from `jira_for_call.user_find_by_user_string`: {type(response)}"
                 logger.error(msg)
                 return None
 
@@ -182,7 +189,7 @@ class UsersMixin(JiraClient):
             logger.info(f"Error looking up user directly: {str(e)}")
             return None
 
-    def _lookup_user_by_permissions(self, username: str) -> str | None:
+    def _lookup_user_by_permissions(self, username: str, pat: str | None = None) -> str | None:
         """Look up a user account ID by permissions.
 
         This is a fallback method when direct lookup fails.
@@ -196,22 +203,26 @@ class UsersMixin(JiraClient):
         try:
             # Try to find user who has permissions for a project
             # This approach helps when regular lookup fails due to permissions
-            url = f"{self.config.url}/rest/api/2/user/permission/search"
+            # Use the provided PAT if available, otherwise use the instance's default client config
+            jira_for_call = self._create_jira_client_with_pat(pat) if pat else self.jira
+
+            url = f"{jira_for_call.config.url}/rest/api/2/user/permission/search"
             params = {"query": username, "permissions": "BROWSE"}
 
             auth = None
             headers = {}
-            if self.config.auth_type == "token":
-                headers["Authorization"] = f"Bearer {self.config.personal_token}"
+            # The client created with PAT will have auth_type 'token' and personal_token set
+            if jira_for_call.config.auth_type == "token":
+                 headers["Authorization"] = f"Bearer {jira_for_call.config.personal_token}"
             else:
-                auth = (self.config.username or "", self.config.api_token or "")
+                 auth = (jira_for_call.config.username or "", jira_for_call.config.api_token or "")
 
             response = requests.get(
                 url,
                 params=params,
                 auth=auth,
                 headers=headers,
-                verify=self.config.ssl_verify,
+                verify=jira_for_call.config.ssl_verify,
             )
 
             if response.status_code == 200:
@@ -240,7 +251,7 @@ class UsersMixin(JiraClient):
             logger.info(f"Error looking up user by permissions: {str(e)}")
             return None
 
-    def _determine_user_api_params(self, identifier: str) -> dict[str, str]:
+    def _determine_user_api_params(self, identifier: str, pat: str | None = None) -> dict[str, str]:
         """
         Determines the correct API parameter and value for the jira.user() call based on the identifier and instance type.
 
@@ -303,9 +314,8 @@ class UsersMixin(JiraClient):
                 f"Identifier '{identifier}' on Cloud is not an account ID or email. Attempting resolution."
             )
             try:
-                account_id_resolved = self._get_account_id(
-                    identifier
-                )  # This might call user_find_by_user_string
+                # Pass the PAT down to _get_account_id
+                account_id_resolved = self._get_account_id(identifier, pat)
                 api_kwargs["account_id"] = account_id_resolved
                 logger.debug(
                     f"Resolved identifier '{identifier}' to accountId '{account_id_resolved}'. Determined param: account_id (Cloud)"
@@ -329,7 +339,7 @@ class UsersMixin(JiraClient):
 
         return api_kwargs
 
-    def get_user_profile_by_identifier(self, identifier: str) -> "JiraUser":
+    def get_user_profile_by_identifier(self, identifier: str, pat: str | None = None) -> "JiraUser":
         """
         Retrieve Jira user profile information by identifier.
 
@@ -344,13 +354,16 @@ class UsersMixin(JiraClient):
             MCPAtlassianAuthenticationError: If authentication fails.
             Exception: For other API errors.
         """
-        # Get the correct API parameters using the helper method
-        api_kwargs = self._determine_user_api_params(identifier)
+        # Get the correct API parameters using the helper method, passing the PAT
+        api_kwargs = self._determine_user_api_params(identifier, pat)
 
         try:
-            logger.debug(f"Calling self.jira.user() with parameters: {api_kwargs}")
-            # Call self.jira.user() with the single determined keyword argument
-            user_data = self.jira.user(**api_kwargs)
+            # Use the provided PAT if available, otherwise use the instance's default client
+            jira_for_call = self._create_jira_client_with_pat(pat) if pat else self.jira
+
+            logger.debug(f"Calling jira_for_call.user() with parameters: {api_kwargs}")
+            # Call jira_for_call.user() with the single determined keyword argument
+            user_data = jira_for_call.user(**api_kwargs)
             if not isinstance(user_data, dict):
                 logger.error(
                     f"User lookup for '{identifier}' returned unexpected type: {type(user_data)}. Data: {user_data}"

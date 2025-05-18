@@ -42,54 +42,13 @@ class JiraClient:
         self.config = config or JiraConfig.from_env()
 
         # Initialize the Jira client based on auth type
-        if self.config.auth_type == "oauth":
-            if not self.config.oauth_config or not self.config.oauth_config.cloud_id:
-                error_msg = "OAuth authentication requires a valid cloud_id"
-                raise ValueError(error_msg)
-
-            # Create a session for OAuth
-            session = Session()
-
-            # Configure the session with OAuth authentication
-            if not configure_oauth_session(session, self.config.oauth_config):
-                error_msg = "Failed to configure OAuth session"
-                raise MCPAtlassianAuthenticationError(error_msg)
-
-            # The Jira API URL with OAuth is different
-            api_url = (
-                f"https://api.atlassian.com/ex/jira/{self.config.oauth_config.cloud_id}"
-            )
-
-            # Initialize Jira with the session
-            self.jira = Jira(
-                url=api_url,
-                session=session,
-                cloud=True,  # OAuth is only for Cloud
-                verify_ssl=self.config.ssl_verify,
-            )
-        elif self.config.auth_type == "token":
-            self.jira = Jira(
-                url=self.config.url,
-                token=self.config.personal_token,
-                cloud=self.config.is_cloud,
-                verify_ssl=self.config.ssl_verify,
-            )
-        else:  # basic auth
-            self.jira = Jira(
-                url=self.config.url,
-                username=self.config.username,
-                password=self.config.api_token,
-                cloud=self.config.is_cloud,
-                verify_ssl=self.config.ssl_verify,
-            )
+        # Initialize self.jira to None initially
+        self.jira = None
 
         # Configure SSL verification using the shared utility
-        configure_ssl_verification(
-            service_name="Jira",
-            url=self.config.url,
-            session=self.jira._session,
-            ssl_verify=self.config.ssl_verify,
-        )
+        # This needs to be done after the Jira instance is created,
+        # but we are removing the initial creation here.
+        # The SSL configuration will be handled when the Jira instance is created later.
 
         # Proxy configuration
         proxies = {}
@@ -113,6 +72,45 @@ class JiraClient:
         self.preprocessor = JiraPreprocessor(base_url=self.config.url)
         self._field_ids_cache = None
         self._current_user_account_id = None
+
+    def _create_jira_client_with_pat(self, pat: str) -> Jira:
+        """Create a Jira client instance using a Personal Access Token (PAT).
+
+        Args:
+            pat: The Personal Access Token to use for authentication.
+
+        Returns:
+            An instance of the atlassian.Jira client.
+        """
+        logger.info("Creating Jira client for request using provided PAT.")
+
+        jira_client = Jira(
+            url=self.config.url,
+            token=pat,
+            cloud=self.config.is_cloud,
+            verify_ssl=self.config.ssl_verify,
+        )
+
+        # Apply SSL verification settings
+        configure_ssl_verification(
+            service_name="Jira",
+            url=self.config.url,
+            session=jira_client._session,
+            ssl_verify=self.config.ssl_verify,
+        )
+
+        # Apply proxy settings
+        proxies = {}
+        if self.config.http_proxy:
+            proxies["http"] = self.config.http_proxy
+        if self.config.https_proxy:
+            proxies["https"] = self.config.https_proxy
+        if self.config.socks_proxy:
+            proxies["socks"] = self.config.socks_proxy
+        if proxies:
+            jira_client._session.proxies.update(proxies)
+
+        return jira_client
 
     def _clean_text(self, text: str) -> str:
         """Clean text content by:
@@ -159,6 +157,7 @@ class JiraClient:
         url: str,
         params_or_json: dict | None = None,
         *,
+        pat: str,
         absolute: bool = False,
     ) -> list[dict]:
         """
@@ -187,11 +186,13 @@ class JiraClient:
 
         while True:
             if method == "get":
-                api_result = self.jira.get(
+                jira_for_call = self._create_jira_client_with_pat(pat)
+                api_result = jira_for_call.get(
                     path=url, params=current_data, absolute=absolute
                 )
             else:
-                api_result = self.jira.post(
+                jira_for_call = self._create_jira_client_with_pat(pat)
+                api_result = jira_for_call.post(
                     path=url, json=current_data, absolute=absolute
                 )
 
@@ -211,3 +212,14 @@ class JiraClient:
             current_data["nextPageToken"] = api_result["nextPageToken"]
 
         return all_results
+
+from .issues import IssuesMixin
+
+
+class CloudJiraClientImpl(IssuesMixin, JiraClient):
+    """Jira client implementation for Cloud instances."""
+    pass
+
+class ServerJiraClientImpl(IssuesMixin, JiraClient):
+    """Jira client implementation for Server/Data Center instances."""
+    pass

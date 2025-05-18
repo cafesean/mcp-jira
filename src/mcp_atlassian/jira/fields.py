@@ -19,40 +19,25 @@ class FieldsMixin(JiraClient, EpicOperationsProto, UsersOperationsProto):
     different Jira instances, especially for custom fields.
     """
 
-    _field_name_to_id_map: dict[str, str] | None = None  # Cache for name -> id mapping
-
-    def get_fields(self, refresh: bool = False) -> list[dict[str, Any]]:
+    def get_fields(self, pat: str) -> list[dict[str, Any]]:
         """
-        Get all available fields from Jira.
+        Get all available fields from Jira using a Personal Access Token (PAT).
 
         Args:
-            refresh: When True, forces a refresh from the server instead of using cache
+            pat: The Personal Access Token (PAT) for authentication.
 
         Returns:
             List of field definitions
         """
         try:
-            # Use cached field data if available and refresh is not requested
-            if self._field_ids_cache is not None and not refresh:
-                return self._field_ids_cache
+            # Fetch fields from Jira API using the provided PAT
+            jira_for_call = self._create_jira_client_with_pat(pat)
+            fields = jira_for_call.get_all_fields()
 
-            if refresh:
-                self._field_name_to_id_map = (
-                    None  # Clear name map cache if refreshing fields
-                )
-
-            # Fetch fields from Jira API
-            fields = self.jira.get_all_fields()
             if not isinstance(fields, list):
-                msg = f"Unexpected return value type from `jira.get_all_fields`: {type(fields)}"
+                msg = f"Unexpected return value type from `jira_for_call.get_all_fields`: {type(fields)}"
                 logger.error(msg)
                 raise TypeError(msg)
-
-            # Cache the fields
-            self._field_ids_cache = fields
-
-            # Regenerate the name map upon fetching new fields
-            self._generate_field_map(force_regenerate=True)
 
             # Log available fields for debugging
             self._log_available_fields(fields)
@@ -63,54 +48,33 @@ class FieldsMixin(JiraClient, EpicOperationsProto, UsersOperationsProto):
             logger.error(f"Error getting Jira fields: {str(e)}")
             return []
 
-    def _generate_field_map(self, force_regenerate: bool = False) -> dict[str, str]:
-        """Generates and caches a map of lowercase field names to field IDs."""
-        if self._field_name_to_id_map is not None and not force_regenerate:
-            return self._field_name_to_id_map
-
-        # Ensure fields are loaded into cache first
-        fields = (
-            self.get_fields()
-        )  # Uses cache if available unless force_regenerate was True
-        if not fields:
-            self._field_name_to_id_map = {}
-            return {}
-
-        name_map: dict[str, str] = {}
-        id_map: dict[str, str] = {}  # Also map ID to ID for consistency
-        for field in fields:
-            field_id = field.get("id")
-            field_name = field.get("name")
-            if field_id:
-                id_map[field_id] = field_id  # Map ID to itself
-                if field_name:
-                    # Store lowercase name -> ID. Handle potential name collisions if necessary.
-                    name_map.setdefault(field_name.lower(), field_id)
-
-        # Combine maps, ensuring IDs can also be looked up directly
-        self._field_name_to_id_map = name_map | id_map
-        logger.debug(
-            f"Generated/Updated field name map: {len(self._field_name_to_id_map)} entries"
-        )
-        return self._field_name_to_id_map
-
-    def get_field_id(self, field_name: str, refresh: bool = False) -> str | None:
+    def get_field_id(self, field_name: str, pat: str) -> str | None:
         """
-        Get the ID for a specific field by name.
+        Get the ID for a specific field by name using a Personal Access Token (PAT).
 
         Args:
             field_name: The name of the field to look for (case-insensitive)
-            refresh: When True, forces a refresh from the server
+            pat: The Personal Access Token (PAT) for authentication.
 
         Returns:
             Field ID if found, None otherwise
         """
         try:
-            # Ensure the map is generated/cached
-            field_map = self._generate_field_map(force_regenerate=refresh)
-            if not field_map:
-                logger.error("Field map could not be generated.")
+            # Fetch fields live
+            fields = self.get_fields(pat=pat)
+            if not fields:
+                logger.error("Could not fetch fields to generate map.")
                 return None
+
+            # Generate map on the fly
+            field_map: dict[str, str] = {}
+            for field in fields:
+                field_id = field.get("id")
+                field_name_from_api = field.get("name")
+                if field_id:
+                    field_map[field_id] = field_id  # Map ID to itself
+                    if field_name_from_api:
+                        field_map.setdefault(field_name_from_api.lower(), field_id)
 
             normalized_name = field_name.lower()
             if normalized_name in field_map:
@@ -119,7 +83,7 @@ class FieldsMixin(JiraClient, EpicOperationsProto, UsersOperationsProto):
             elif field_name in field_map:  # Checks the id_map part
                 return field_map[field_name]
             else:
-                logger.warning(f"Field '{field_name}' not found in generated map.")
+                logger.warning(f"Field '{field_name}' not found in fetched fields.")
                 return None
 
         except Exception as e:
@@ -127,20 +91,20 @@ class FieldsMixin(JiraClient, EpicOperationsProto, UsersOperationsProto):
             return None
 
     def get_field_by_id(
-        self, field_id: str, refresh: bool = False
+        self, field_id: str, pat: str
     ) -> dict[str, Any] | None:
         """
-        Get field definition by ID.
+        Get field definition by ID using a Personal Access Token (PAT).
 
         Args:
             field_id: The ID of the field to look for
-            refresh: When True, forces a refresh from the server
+            pat: The Personal Access Token (PAT) for authentication.
 
         Returns:
             Field definition if found, None otherwise
         """
         try:
-            fields = self.get_fields(refresh=refresh)
+            fields = self.get_fields(pat=pat)
 
             for field in fields:
                 if field.get("id") == field_id:
@@ -153,12 +117,12 @@ class FieldsMixin(JiraClient, EpicOperationsProto, UsersOperationsProto):
             logger.error(f"Error getting field by ID '{field_id}': {str(e)}")
             return None
 
-    def get_custom_fields(self, refresh: bool = False) -> list[dict[str, Any]]:
+    def get_custom_fields(self, pat: str) -> list[dict[str, Any]]:
         """
-        Get all custom fields.
+        Get all custom fields using a Personal Access Token (PAT).
 
         Args:
-            refresh: When True, forces a refresh from the server
+            pat: The Personal Access Token (PAT) for authentication.
 
         Returns:
             List of custom field definitions
@@ -177,9 +141,9 @@ class FieldsMixin(JiraClient, EpicOperationsProto, UsersOperationsProto):
             logger.error(f"Error getting custom fields: {str(e)}")
             return []
 
-    def get_required_fields(self, issue_type: str, project_key: str) -> dict[str, Any]:
+    def get_required_fields(self, issue_type: str, project_key: str, pat: str) -> dict[str, Any]:
         """
-        Get required fields for creating an issue of a specific type in a project.
+        Get required fields for creating an issue of a specific type in a project using a Personal Access Token (PAT).
 
         Args:
             issue_type: The issue type (e.g., 'Bug', 'Story', 'Epic')
@@ -210,7 +174,8 @@ class FieldsMixin(JiraClient, EpicOperationsProto, UsersOperationsProto):
                 return {}
 
             # Step 2: Call the correct API method to get field metadata
-            meta = self.jira.issue_createmeta_fieldtypes(
+            jira_for_call = self._create_jira_client_with_pat(pat)
+            meta = jira_for_call.issue_createmeta_fieldtypes(
                 project=project_key, issue_type_id=issue_type_id
             )
 
@@ -245,9 +210,9 @@ class FieldsMixin(JiraClient, EpicOperationsProto, UsersOperationsProto):
             )
             return {}
 
-    def get_field_ids_to_epic(self) -> dict[str, str]:
+    def get_field_ids_to_epic(self, pat: str) -> dict[str, str]:
         """
-        Dynamically discover Jira field IDs relevant to Epic linking.
+        Dynamically discover Jira field IDs relevant to Epic linking using a Personal Access Token (PAT).
         This method queries the Jira API to find the correct custom field IDs
         for Epic-related fields, which can vary between different Jira instances.
 
@@ -256,11 +221,8 @@ class FieldsMixin(JiraClient, EpicOperationsProto, UsersOperationsProto):
             (e.g., {'epic_link': 'customfield_10014', 'epic_name': 'customfield_10011'})
         """
         try:
-            # Ensure field list and map are cached/generated
-            self._generate_field_map()  # Generates map and ensures fields are cached
-
-            # Get all fields (uses cache if available)
-            fields = self.get_fields()
+            # Get all fields
+            fields = self.get_fields(pat=pat)
             if not fields:  # Check if get_fields failed or returned empty
                 logger.error(
                     "Could not load field definitions for epic field discovery."
@@ -401,9 +363,9 @@ class FieldsMixin(JiraClient, EpicOperationsProto, UsersOperationsProto):
         """
         return field_id.startswith("customfield_")
 
-    def format_field_value(self, field_id: str, value: Any) -> Any:
+    def format_field_value(self, field_id: str, value: Any, pat: str) -> Any:
         """
-        Format a field value based on its type for update operations.
+        Format a field value based on its type for update operations using a Personal Access Token (PAT).
 
         Different field types in Jira require different JSON formats when updating.
         This method helps format the value correctly for the specific field type.
@@ -417,7 +379,7 @@ class FieldsMixin(JiraClient, EpicOperationsProto, UsersOperationsProto):
         """
         try:
             # Get field definition
-            field = self.get_field_by_id(field_id)
+            field = self.get_field_by_id(field_id, pat=pat)
 
             if not field:
                 # For unknown fields, return value as-is
@@ -458,10 +420,10 @@ class FieldsMixin(JiraClient, EpicOperationsProto, UsersOperationsProto):
             return value
 
     def search_fields(
-        self, keyword: str, limit: int = 10, *, refresh: bool = False
+        self, keyword: str, pat: str, limit: int = 10
     ) -> list[dict[str, Any]]:
         """
-        Search fields using fuzzy matching.
+        Search fields using fuzzy matching using a Personal Access Token (PAT).
 
         Args:
             keyword: The search keyword
@@ -473,7 +435,7 @@ class FieldsMixin(JiraClient, EpicOperationsProto, UsersOperationsProto):
         """
         try:
             # Get all fields
-            fields = self.get_fields(refresh=refresh)
+            fields = self.get_fields(pat=pat)
 
             # if keyword is empty, return `limit` fields
             if not keyword:

@@ -7,18 +7,14 @@ from typing import Any
 from requests.exceptions import HTTPError
 
 from ..exceptions import MCPAtlassianAuthenticationError
-from ..models.jira import JiraIssue
+from ..models.jira import JiraIssue, JiraSearchResult
 from ..models.jira.common import JiraChangelog
 from ..utils import parse_date
 from .client import JiraClient
 from .constants import DEFAULT_READ_JIRA_FIELDS
-from .protocols import (
-    AttachmentsOperationsProto,
-    EpicOperationsProto,
-    FieldsOperationsProto,
-    IssueOperationsProto,
-    UsersOperationsProto,
-)
+from .protocols import (AttachmentsOperationsProto, EpicOperationsProto,
+                        FieldsOperationsProto, IssueOperationsProto,
+                        UsersOperationsProto)
 
 logger = logging.getLogger("mcp-jira")
 
@@ -36,6 +32,7 @@ class IssuesMixin(
     def get_issue(
         self,
         issue_key: str,
+        pat: str,
         expand: str | None = None,
         comment_limit: int | str | None = 10,
         fields: str | list[str] | tuple[str, ...] | set[str] | None = None,
@@ -60,6 +57,7 @@ class IssuesMixin(
             MCPAtlassianAuthenticationError: If authentication fails with the Jira API (401/403)
             Exception: If there is an error retrieving the issue
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
             # Determine fields_param: use provided fields or default from constant
             fields_param = fields
@@ -119,7 +117,7 @@ class IssuesMixin(
                 properties_param = ",".join(properties)
 
             # Get the issue data with all parameters
-            issue = self.jira.get_issue(
+            issue = jira_for_call.get_issue(
                 issue_key,
                 expand=expand_param,
                 fields=fields_param,
@@ -143,14 +141,14 @@ class IssuesMixin(
             if "comment" in fields_data:
                 comment_limit_int = self._normalize_comment_limit(comment_limit)
                 comments = self._get_issue_comments_if_needed(
-                    issue_key, comment_limit_int
+                    issue_key, pat, comment_limit_int
                 )
                 # Add comments to the issue data for processing by the model
                 fields_data["comment"]["comments"] = comments
 
             # Extract epic information
             try:
-                epic_info = self._extract_epic_information(issue)
+                epic_info = self._extract_epic_information(issue, pat)
             except Exception as e:
                 logger.warning(f"Error extracting epic information: {str(e)}")
                 epic_info = {"epic_key": None, "epic_name": None}
@@ -206,6 +204,141 @@ class IssuesMixin(
             logger.error(f"Error retrieving issue {issue_key}: {error_msg}")
             raise Exception(f"Error retrieving issue {issue_key}: {error_msg}") from e
 
+    def search_issues(
+        self,
+        jql: str,
+pat: str,
+        fields: str | list[str] | tuple[str, ...] | set[str] | None = None,
+        limit: int = 50,
+        start: int = 0,
+        expand: str | None = None,
+        projects_filter: str | None = None,
+    ) -> JiraSearchResult:
+        """
+        Search Jira issues using JQL.
+
+        Args:
+            jql: JQL query string.
+            fields: Fields to return.
+            limit: Maximum number of results.
+            start: Starting index for pagination.
+            expand: Optional fields to expand.
+            projects_filter: Comma-separated list of project keys to filter by.
+
+        Returns:
+            JiraSearchResult model with search results and pagination info.
+
+        Raises:
+            MCPAtlassianAuthenticationError: If authentication fails with the Jira API (401/403)
+            Exception: If there is an error during the search
+        """
+        jira_for_call = self._create_jira_client_with_pat(pat)
+        try:
+            fields_param: str | list[str] | None = fields
+            if fields_param is None:
+                fields_param = ",".join(DEFAULT_READ_JIRA_FIELDS)
+            elif isinstance(fields_param, list | tuple | set):
+                fields_param = ",".join(fields_param)
+
+            # The atlassian-python-api search_issues method takes maxResults and startAt
+            search_data = jira_for_call.jql(
+                jql,
+                limit=limit,
+                start=start,
+                fields=fields_param,
+                expand=expand,
+                # Note: atlassian-python-api's jql method doesn't have a direct projects_filter parameter.
+                # The projects filter should ideally be part of the JQL itself (e.g., "project in (PROJ1, PROJ2)").
+                # If projects_filter is provided here, it won't be used by the underlying library's jql method.
+                # We will rely on the JQL to handle project filtering.
+            )
+
+            if not isinstance(search_data, dict):
+                 msg = f"Unexpected return value type from `jira.jql`: {type(search_data)}"
+                 logger.error(msg)
+                 raise TypeError(msg)
+
+            # Convert the raw search result dictionary to the JiraSearchResult model
+            return JiraSearchResult.from_api_response(search_data, base_url=self.config.url)
+
+        except HTTPError as http_err:
+            if http_err.response is not None and http_err.response.status_code in [
+                401,
+                403,
+            ]:
+                error_msg = (
+                    f"Authentication failed for Jira API ({http_err.response.status_code}). "
+                    "Token may be expired or invalid. Please verify credentials."
+                )
+                logger.error(error_msg)
+                raise MCPAtlassianAuthenticationError(error_msg) from http_err
+            else:
+                logger.error(f"HTTP error during API call: {http_err}", exc_info=False)
+                raise
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"Error searching issues with JQL '{jql}': {error_msg}")
+            raise Exception(f"Error searching issues with JQL '{jql}': {error_msg}") from e
+
+    def _generate_field_map(self) -> dict[str, str]:
+        """Generate a mapping from common field names to their Jira IDs."""
+        # This method needs to be implemented based on how field IDs are discovered or configured.
+        # For now, returning an empty dictionary as a placeholder.
+        logger.warning("'_generate_field_map' is not implemented.")
+        return {}
+
+    def _get_account_id(self, user_identifier: str, pat: str) -> str:
+        """Get the account ID for a given user identifier."""
+        # This method needs to be implemented to fetch the account ID from Jira.
+        # For now, returning a placeholder.
+        logger.warning("'_get_account_id' is not implemented.")
+        return f"accountid_for_{user_identifier}" # Placeholder
+
+    def _try_discover_fields_from_existing_epic(self, epic_key: str, pat: str) -> dict[str, str]:
+        """Attempt to discover epic-related field IDs from an existing epic."""
+        # This method needs to be implemented to dynamically discover field IDs.
+        # For now, returning an empty dictionary as a placeholder.
+        logger.warning("'_try_discover_fields_from_existing_epic' is not implemented.")
+        return {}
+
+    def get_field_by_id(self, field_id: str, pat: str) -> dict[str, Any]:
+        """Get details of a specific field by its ID."""
+        # This method needs to be implemented to fetch field details from Jira.
+        # For now, returning a placeholder.
+        logger.warning("'get_field_by_id' is not implemented.")
+        return {"id": field_id, "name": f"Field {field_id}"} # Placeholder
+
+    def get_field_ids_to_epic(self, pat: str | None = None) -> dict[str, str]:
+        """Get the field IDs for epic link and epic name."""
+        # This method needs to be implemented to find the custom field IDs for epic link and name.
+        # For now, returning placeholders.
+        logger.warning("'get_field_ids_to_epic' is not implemented.")
+        # These are common custom field names, but IDs vary per instance.
+        # A proper implementation would search for fields by name.
+        return {"epic_link": "customfield_10008", "epic_name": "customfield_10009"} # Common placeholders
+
+    def prepare_epic_fields(self, fields: dict[str, Any], epic_key: str, pat: str) -> None:
+        """Prepare fields dictionary for linking an issue to an epic."""
+        # This method needs to be implemented to correctly format the fields for linking to an epic.
+        # For now, doing nothing as a placeholder.
+        logger.warning("'prepare_epic_fields' is not implemented.")
+        pass # Placeholder
+
+    def update_epic_fields(self, issue_key: str, epic_key: str, pat: str) -> None:
+        """Update epic link fields for an issue."""
+        # This method needs to be implemented to update the epic link field on an issue.
+        # For now, doing nothing as a placeholder.
+        logger.warning("'update_epic_fields' is not implemented.")
+        pass # Placeholder
+
+    def upload_attachments(self, issue_key: str, file_paths: list[str], pat: str) -> list[dict]:
+        """Upload attachments to a Jira issue."""
+        # This method needs to be implemented to handle file uploads.
+        # For now, returning an empty list as a placeholder.
+        logger.warning("'upload_attachments' is not implemented.")
+        return [] # Placeholder
+
+
     def _normalize_comment_limit(self, comment_limit: int | str | None) -> int | None:
         """
         Normalize the comment limit to an integer or None.
@@ -233,7 +366,7 @@ class IssuesMixin(
             return 10
 
     def _get_issue_comments_if_needed(
-        self, issue_key: str, comment_limit: int | None
+        self, issue_key: str, pat: str, comment_limit: int | None
     ) -> list[dict]:
         """
         Get comments for an issue if needed.
@@ -245,9 +378,10 @@ class IssuesMixin(
         Returns:
             List of comments
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         if comment_limit is None or comment_limit > 0:
             try:
-                response = self.jira.issue_get_comments(issue_key)
+                response = jira_for_call.issue_get_comments(issue_key)
                 if not isinstance(response, dict):
                     msg = f"Unexpected return value type from `jira.issue_get_comments`: {type(response)}"
                     logger.error(msg)
@@ -265,7 +399,7 @@ class IssuesMixin(
                 return []
         return []
 
-    def _extract_epic_information(self, issue: dict) -> dict[str, str | None]:
+    def _extract_epic_information(self, issue: dict, pat: str) -> dict[str, str | None]:
         """
         Extract epic information from an issue.
 
@@ -312,7 +446,8 @@ class IssuesMixin(
 
                     # Try to get epic details
                     try:
-                        epic = self.jira.get_issue(
+                        jira_for_call = self._create_jira_client_with_pat(pat)
+                        epic = jira_for_call.get_issue(
                             epic_key,
                             expand=None,
                             fields=None,
@@ -482,6 +617,7 @@ class IssuesMixin(
         project_key: str,
         summary: str,
         issue_type: str,
+        pat: str,
         description: str = "",
         assignee: str | None = None,
         components: list[str] | None = None,
@@ -657,7 +793,7 @@ class IssuesMixin(
                 "Issue type is a sub-task but parent issue key or id not specified. Please provide a 'parent' parameter with the parent issue key."
             )
 
-    def _add_assignee_to_fields(self, fields: dict[str, Any], assignee: str) -> None:
+    def _add_assignee_to_fields(self, fields: dict[str, Any], assignee: str, pat: str) -> None:
         """
         Add assignee to issue fields.
 
@@ -1097,7 +1233,7 @@ class IssuesMixin(
             raise TypeError(msg)
         return JiraIssue.from_api_response(issue_data)
 
-    def delete_issue(self, issue_key: str) -> bool:
+    def delete_issue(self, issue_key: str, pat: str) -> bool:
         """
         Delete a Jira issue.
 
@@ -1163,7 +1299,7 @@ class IssuesMixin(
         except Exception as e:
             logger.warning(f"Error processing field for epic data: {str(e)}")
 
-    def get_available_transitions(self, issue_key: str) -> list[dict]:
+    def get_available_transitions(self, issue_key: str, pat: str) -> list[dict]:
         """
         Get all available transitions for an issue.
 
@@ -1185,7 +1321,7 @@ class IssuesMixin(
                 f"Error getting transitions for issue {issue_key}: {str(e)}"
             ) from e
 
-    def transition_issue(self, issue_key: str, transition_id: str) -> JiraIssue:
+    def transition_issue(self, issue_key: str, transition_id: str, pat: str) -> JiraIssue:
         """
         Transition an issue to a new status.
 

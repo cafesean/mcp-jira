@@ -16,6 +16,7 @@ class BoardsMixin(JiraClient):
 
     def get_all_agile_boards(
         self,
+        pat: str,
         board_name: str | None = None,
         project_key: str | None = None,
         board_type: str | None = None,
@@ -38,8 +39,9 @@ class BoardsMixin(JiraClient):
         Raises:
             Exception: If there is an error retrieving the boards
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
-            boards = self.jira.get_all_agile_boards(
+            boards = jira_for_call.get_all_agile_boards(
                 board_name=board_name,
                 project_key=project_key,
                 board_type=board_type,
@@ -56,6 +58,7 @@ class BoardsMixin(JiraClient):
 
     def get_all_agile_boards_model(
         self,
+        pat: str,
         board_name: str | None = None,
         project_key: str | None = None,
         board_type: str | None = None,
@@ -79,6 +82,7 @@ class BoardsMixin(JiraClient):
             Exception: If there is an error retrieving the boards
         """
         boards = self.get_all_agile_boards(
+            pat=pat,
             board_name=board_name,
             project_key=project_key,
             board_type=board_type,

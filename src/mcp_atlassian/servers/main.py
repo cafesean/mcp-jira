@@ -13,6 +13,8 @@ from starlette.responses import JSONResponse
 from mcp_atlassian.confluence import ConfluenceFetcher
 from mcp_atlassian.confluence.config import ConfluenceConfig
 from mcp_atlassian.jira import JiraFetcher
+# Assuming these concrete implementations exist and are imported
+from mcp_atlassian.jira.client import CloudJiraClientImpl, ServerJiraClientImpl
 from mcp_atlassian.jira.config import JiraConfig
 from mcp_atlassian.utils import is_read_only_mode
 from mcp_atlassian.utils.environment import get_available_services
@@ -50,7 +52,9 @@ async def main_lifespan(app: FastMCP[MainAppContext]) -> AsyncIterator[MainAppCo
         logger.info("Attempting to initialize Jira client...")
         try:
             jira_config = JiraConfig.from_env()
-            jira = JiraFetcher(config=jira_config)
+            # log out jira_config for debugging
+            logger.info(f"jira_config: {jira_config}")
+            jira = ServerJiraClientImpl(config=jira_config)
             logger.info("Jira client initialized successfully.")
         except Exception as e:
             logger.error(f"Failed to initialize Jira client: {e}", exc_info=True)

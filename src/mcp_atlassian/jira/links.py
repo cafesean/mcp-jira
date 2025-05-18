@@ -15,7 +15,7 @@ logger = logging.getLogger("mcp-jira")
 class LinksMixin(JiraClient):
     """Mixin for Jira issue link operations."""
 
-    def get_issue_link_types(self) -> list[JiraIssueLinkType]:
+    def get_issue_link_types(self, pat: str) -> list[JiraIssueLinkType]:
         """
         Get all available issue link types.
 
@@ -27,8 +27,9 @@ class LinksMixin(JiraClient):
                 (401/403)
             Exception: If there is an error retrieving issue link types
         """
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
-            link_types_response = self.jira.get("rest/api/2/issueLinkType")
+            link_types_response = jira_for_call.get("rest/api/2/issueLinkType")
             if not isinstance(link_types_response, dict):
                 msg = f"Unexpected return value type from `jira.get`: {type(link_types_response)}"
                 logger.error(msg)
@@ -65,7 +66,7 @@ class LinksMixin(JiraClient):
             logger.error(f"Error getting issue link types: {error_msg}", exc_info=True)
             raise Exception(f"Error getting issue link types: {error_msg}") from e
 
-    def create_issue_link(self, data: dict[str, Any]) -> dict[str, Any]:
+    def create_issue_link(self, data: dict[str, Any], pat: str) -> dict[str, Any]:
         """
         Create a link between two issues.
 
@@ -100,9 +101,10 @@ class LinksMixin(JiraClient):
         if not data.get("outwardIssue") or not data["outwardIssue"].get("key"):
             raise ValueError("Outward issue key is required")
 
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
             # Create the issue link
-            self.jira.create_issue_link(data)
+            jira_for_call.create_issue_link(data)
 
             # Return a response with the link information
             response = {
@@ -135,7 +137,7 @@ class LinksMixin(JiraClient):
             logger.error(f"Error creating issue link: {error_msg}", exc_info=True)
             raise Exception(f"Error creating issue link: {error_msg}") from e
 
-    def remove_issue_link(self, link_id: str) -> dict[str, Any]:
+    def remove_issue_link(self, link_id: str, pat: str) -> dict[str, Any]:
         """
         Remove a link between two issues.
 
@@ -154,9 +156,10 @@ class LinksMixin(JiraClient):
         if not link_id:
             raise ValueError("Link ID is required")
 
+        jira_for_call = self._create_jira_client_with_pat(pat)
         try:
             # Remove the issue link
-            self.jira.remove_issue_link(link_id)
+            jira_for_call.remove_issue_link(link_id)
 
             # Return a response indicating success
             response = {

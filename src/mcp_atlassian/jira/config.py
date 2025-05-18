@@ -18,11 +18,6 @@ class JiraConfig:
     """
 
     url: str  # Base URL for Jira
-    auth_type: Literal["basic", "token", "oauth"]  # Authentication type
-    username: str | None = None  # Email or username (Cloud)
-    api_token: str | None = None  # API token (Cloud)
-    personal_token: str | None = None  # Personal access token (Server/DC)
-    oauth_config: OAuthConfig | None = None  # OAuth 2.0 configuration
     ssl_verify: bool = True  # Whether to verify SSL certificates
     projects_filter: str | None = None  # List of project keys to filter searches
     http_proxy: str | None = None  # HTTP proxy URL
@@ -64,38 +59,7 @@ class JiraConfig:
             error_msg = "Missing required JIRA_URL environment variable"
             raise ValueError(error_msg)
 
-        # Determine authentication type based on available environment variables
-        username = os.getenv("JIRA_USERNAME")
-        api_token = os.getenv("JIRA_API_TOKEN")
-        personal_token = os.getenv("JIRA_PERSONAL_TOKEN")
-
-        # Check for OAuth configuration
-        oauth_config = OAuthConfig.from_env()
-        auth_type = None
-
-        # Use the shared utility function directly
-        is_cloud = is_atlassian_cloud_url(url)
-
-        if oauth_config and oauth_config.cloud_id:
-            # OAuth takes precedence if fully configured
-            auth_type = "oauth"
-        elif is_cloud:
-            if username and api_token:
-                auth_type = "basic"
-            else:
-                error_msg = "Cloud authentication requires JIRA_USERNAME and JIRA_API_TOKEN, or OAuth configuration"
-                raise ValueError(error_msg)
-        else:  # Server/Data Center
-            if personal_token:
-                auth_type = "token"
-            elif username and api_token:
-                # Allow basic auth for Server/DC too
-                auth_type = "basic"
-            else:
-                error_msg = "Server/Data Center authentication requires JIRA_PERSONAL_TOKEN or JIRA_USERNAME and JIRA_API_TOKEN"
-                raise ValueError(error_msg)
-
-        # SSL verification (for Server/DC)
+        # SSL verification
         ssl_verify_env = os.getenv("JIRA_SSL_VERIFY", "true").lower()
         ssl_verify = ssl_verify_env not in ("false", "0", "no")
 
@@ -110,11 +74,6 @@ class JiraConfig:
 
         return cls(
             url=url,
-            auth_type=auth_type,
-            username=username,
-            api_token=api_token,
-            personal_token=personal_token,
-            oauth_config=oauth_config,
             ssl_verify=ssl_verify,
             projects_filter=projects_filter,
             http_proxy=http_proxy,
