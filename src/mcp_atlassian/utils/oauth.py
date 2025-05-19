@@ -42,6 +42,7 @@ class OAuthConfig:
     - Cloud ID identification
     """
 
+    personal_token: str
     client_id: str
     client_secret: str
     redirect_uri: str
@@ -75,6 +76,7 @@ class OAuthConfig:
             The authorization URL to redirect the user to.
         """
         params = {
+            "personal_token": self.personal_token,
             "audience": "api.atlassian.com",
             "client_id": self.client_id,
             "scope": self.scope,
@@ -96,6 +98,7 @@ class OAuthConfig:
         """
         try:
             payload = {
+                "personal_token": self.personal_token,
                 "grant_type": "authorization_code",
                 "client_id": self.client_id,
                 "client_secret": self.client_secret,
@@ -313,6 +316,7 @@ class OAuthConfig:
 
             if token_data is None:
                 token_data = {
+                    "personal_token": self.personal_token,
                     "refresh_token": self.refresh_token,
                     "access_token": self.access_token,
                     "expires_at": self.expires_at,
@@ -434,6 +438,7 @@ def configure_oauth_session(
         f"configure_oauth_session: Received OAuthConfig with "
         f"access_token_present={bool(oauth_config.access_token)}, "
         f"refresh_token_present={bool(oauth_config.refresh_token)}, "
+        f"personal_token_present={bool(oauth_config.personal_token)}, "
         f"cloud_id='{oauth_config.cloud_id}'"
     )
     # If user provided only an access token (no refresh_token), use it directly

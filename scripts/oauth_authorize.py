@@ -212,6 +212,7 @@ def run_oauth_flow(args: argparse.Namespace) -> bool:
         client_id=args.client_id,
         client_secret=args.client_secret,
         redirect_uri=args.redirect_uri,
+        personal_token=args.personal_token,
         scope=args.scope,
     )
 

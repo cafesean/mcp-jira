@@ -54,38 +54,42 @@ def get_available_services() -> dict[str, bool | None]:
     jira_is_setup = False
     if jira_url:
         is_cloud = is_atlassian_cloud_url(jira_url)
-
-        # OAuth check (highest precedence, applies to Cloud)
-        if all(
-            [
-                os.getenv("ATLASSIAN_OAUTH_CLIENT_ID"),
-                os.getenv("ATLASSIAN_OAUTH_CLIENT_SECRET"),
-                os.getenv("ATLASSIAN_OAUTH_REDIRECT_URI"),
-                os.getenv("ATLASSIAN_OAUTH_SCOPE"),
-                os.getenv("ATLASSIAN_OAUTH_CLOUD_ID"),
-            ]
-        ):
-            jira_is_setup = True
-            logger.info(
-                "Using Jira OAuth 2.0 (3LO) authentication (Cloud-only features)"
-            )
-        elif is_cloud:  # Cloud non-OAuth
-            if all(
-                [
-                    os.getenv("JIRA_USERNAME"),
-                    os.getenv("JIRA_API_TOKEN"),
-                ]
-            ):
-                jira_is_setup = True
-                logger.info("Using Jira Cloud Basic Authentication (API Token)")
-        else:  # Server/Data Center non-OAuth
-            if os.getenv("JIRA_PERSONAL_TOKEN") or (
-                os.getenv("JIRA_USERNAME") and os.getenv("JIRA_API_TOKEN")
-            ):
-                jira_is_setup = True
-                logger.info(
-                    "Using Jira Server/Data Center authentication (PAT or Basic Auth)"
-                )
+        jira_is_setup = True
+        logger.info(
+            "Using Jira Server/Data Center authentication (PAT or Basic Auth)"
+        )
+        
+        # # OAuth check (highest precedence, applies to Cloud)
+        # if all(
+        #     [
+        #         os.getenv("ATLASSIAN_OAUTH_CLIENT_ID"),
+        #         os.getenv("ATLASSIAN_OAUTH_CLIENT_SECRET"),
+        #         os.getenv("ATLASSIAN_OAUTH_REDIRECT_URI"),
+        #         os.getenv("ATLASSIAN_OAUTH_SCOPE"),
+        #         os.getenv("ATLASSIAN_OAUTH_CLOUD_ID"),
+        #     ]
+        # ):
+        #     jira_is_setup = True
+        #     logger.info(
+        #         "Using Jira OAuth 2.0 (3LO) authentication (Cloud-only features)"
+        #     )
+        # elif is_cloud:  # Cloud non-OAuth
+        #     if all(
+        #         [
+        #             os.getenv("JIRA_USERNAME"),
+        #             os.getenv("JIRA_API_TOKEN"),
+        #         ]
+        #     ):
+        #         jira_is_setup = True
+        #         logger.info("Using Jira Cloud Basic Authentication (API Token)")
+        # else:  # Server/Data Center non-OAuth
+        #     if os.getenv("JIRA_PERSONAL_TOKEN") or (
+        #         os.getenv("JIRA_USERNAME") and os.getenv("JIRA_API_TOKEN")
+        #     ):
+        #         jira_is_setup = True
+        #         logger.info(
+        #             "Using Jira Server/Data Center authentication (PAT or Basic Auth)"
+                # )
     # If jira_url is not set, jira_is_setup remains False
 
     if not confluence_is_setup:
